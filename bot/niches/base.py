@@ -55,6 +55,11 @@ class Niche:
     address_prompt: str = ""
 
     @property
+    def has_price(self) -> bool:
+        """В нише согласуют стоимость, поэтому у заявки есть поле price."""
+        return any(s.approval for s in self.statuses)
+
+    @property
     def object_label(self) -> str:
         return self.object_name.capitalize()
 

@@ -5,6 +5,7 @@ from html import escape
 from bot.config import Settings
 from bot.db import Order
 from bot.niches import NICHES, Niche
+from bot.services.price import format_rub
 from bot.services.slots import fmt_dt
 
 
@@ -88,6 +89,10 @@ def order_created(o: Order, s: Settings) -> str:
     )
 
 
+def _price_line(o: Order) -> str:
+    return f"\n💰 Стоимость: <b>{format_rub(o.price)}</b>" if o.price else ""
+
+
 def _note_line(o: Order, prefix: str) -> str:
     return f"\n💬 {prefix}{_e(o.admin_note)}" if o.admin_note else ""
 
@@ -98,7 +103,7 @@ def order_status_card(o: Order) -> str:
     return (
         f"<b>Заявка №{o.id}</b> — {o.status_text}\n"
         f"{niche.emoji} {o.service_name} · {_e(o.device) or niche.object_missing}\n"
-        f"🕒 {niche.visit_label}: {fmt_dt(o.slot)}{place}{_note_line(o, 'Мастер: ')}"
+        f"🕒 {niche.visit_label}: {fmt_dt(o.slot)}{place}{_price_line(o)}{_note_line(o, 'Мастер: ')}"
     )
 
 
@@ -129,6 +134,7 @@ def admin_order(o: Order) -> str:
         f"📝 {_e(o.problem) or '—'}\n"
         f"{place}"
         f"🕒 <b>{fmt_dt(o.slot)}</b>"
+        f"{_price_line(o)}"
     )
 
 
@@ -143,6 +149,29 @@ def admin_order_line(o: Order) -> str:
 def quote_hint(o: Order) -> str:
     return (f"Укажите сумму — клиент получит кнопки «Согласен» и «Перезвоните мне»:\n"
             f"<code>/note {o.id} 8 500 ₽, замена колодок</code>")
+
+
+def price_saved(o: Order) -> str:
+    return (f"💰 Заявка №{o.id}: стоимость <b>{format_rub(o.price)}</b> записана. "
+            "Клиент увидит её в статусе готовности.")
+
+
+def price_format_error() -> str:
+    return "Формат: /price 12 8500"
+
+
+def price_wrong_niche() -> str:
+    return "Команда /price работает только в автосервисе."
+
+
+def note_sent(o: Order, had_amount: bool) -> str:
+    text = f"Комментарий к №{o.id} отправлен клиенту."
+    if had_amount:
+        return f"{text}\n💰 Стоимость записана: <b>{format_rub(o.price)}</b>. Исправить: /price {o.id} сумма"
+    status = o.preset.status(o.status)
+    if status and status.approval:
+        return f"{text}\n⚠️ Сумму в тексте не нашёл. Укажите её: /price {o.id} сумма"
+    return text
 
 
 QUOTE_YES = "yes"
@@ -181,6 +210,10 @@ def relay_ack() -> str:
     return "✉️ Передали мастеру, он ответит в этом чате."
 
 
+def relay_too_many() -> str:
+    return "Слишком много сообщений, мастер ответит на предыдущие"
+
+
 def relay_failed() -> str:
     return "⚠️ Не получилось передать сообщение. Попробуйте позже или позвоните нам."
 
@@ -210,6 +243,7 @@ def admin_help() -> str:
         "/open — все незакрытые заявки\n"
         "/order 12 — карточка заявки №12 с кнопками статусов\n"
         "/note 12 текст — комментарий клиенту (действует до следующей смены статуса)\n"
+        "/price 12 8500 — стоимость заявки (автосервис), сохраняется при смене статусов\n"
         "/move 12 2026-11-05 14:00 — перенести визит\n"
         "/block 2026-11-05 14:00 — закрыть слот\n"
         "/unblock 2026-11-05 14:00 — открыть слот\n"
@@ -261,8 +295,22 @@ def demo_master_card(o: Order) -> str:
     return f"🛠 <b>Карточка мастера</b>, заявка №{o.id}\nСтатус: <b>{o.status_text}</b>\n\n{hint}"
 
 
-def demo_quote_hint() -> str:
-    return "👆 Клиент получил сумму и кнопки. Нажмите за клиента «Согласен» или «Перезвоните мне»."
+def demo_quote_hint(o: Order) -> str:
+    saved = f"\n\n💰 Стоимость {format_rub(o.price)} записана в заявку и сохранится при смене статусов." if o.price else ""
+    return f"👆 Клиент получил сумму и кнопки. Нажмите за клиента «Согласен» или «Перезвоните мне».{saved}"
+
+
+def _remind_period(minutes: int) -> str:
+    if minutes % 60:
+        return f"{minutes} минут"
+    hours = minutes // 60
+    word = "час" if hours % 10 == 1 and hours % 100 != 11 else "часа" if 2 <= hours % 10 <= 4 and not 12 <= hours % 100 <= 14 else "часов"
+    return "час" if hours == 1 else f"{hours} {word}"
+
+
+def demo_reminder_preview(o: Order, s: Settings) -> str:
+    return (f"⏰ <b>Так выглядит напоминание за {_remind_period(s.remind_before_minutes)} до визита</b>\n\n"
+            f"{reminder(o, s)}")
 
 
 def demo_quote_card(o: Order, answer: str) -> str:

@@ -72,6 +72,8 @@ class Notifier:
 
     async def new_order(self, o: Order) -> None:
         if o.demo:
+            # Настоящее напоминание в демо не приходит, поэтому показываем его сразу. Карточка остаётся внизу чата
+            await self._send(o.user_id, texts.demo_reminder_preview(o, self.settings))
             await self._send(o.user_id, texts.demo_new_card(o),
                              reply_markup=kb.admin_status_kb(o.preset, o.id, current=o.status))
             return
@@ -95,7 +97,7 @@ class Notifier:
         elif o.status == CANCELLED.code:
             await self._send(o.user_id, texts.demo_cancelled())
         elif o.awaits_quote_answer:
-            await self._send(o.user_id, texts.demo_quote_hint())
+            await self._send(o.user_id, texts.demo_quote_hint(o))
         else:
             await self._send(o.user_id, texts.demo_master_card(o),
                              reply_markup=kb.admin_status_kb(o.preset, o.id, current=o.status))

@@ -113,4 +113,4 @@ async def test_agreed_sum_does_not_repeat_in_following_demo_statuses(tmp_path, m
     seen = len(h.bot.sent)
     for code in ("in_progress", "ready", "done"):
         await h.press(f"adm:{code}:1", CLIENT)
-    assert not any("8 500 ₽" in s.text for s in h.bot.sent[seen:])
+    assert not any("замена колодок" in s.text for s in h.bot.sent[seen:])

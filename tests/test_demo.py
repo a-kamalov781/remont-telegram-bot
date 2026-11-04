@@ -98,6 +98,37 @@ async def test_visitor_receives_master_card_of_own_order(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_reminder_preview_comes_before_master_card(tmp_path, monkeypatch):
+    from bot import texts
+
+    h = await demo(tmp_path, monkeypatch)
+    await choose(h, ANNA, "appliance")
+    await h.book(ANNA, NICHES["appliance"].menu_book, address="Невский пр., 10, кв. 5")
+    sent = h.texts_to(ANNA)
+    o = await h.db.order(1)
+    assert sent[-2].startswith("⏰ <b>Так выглядит напоминание за 2 часа до визита</b>")
+    assert texts.reminder(o, h.settings) in sent[-2]  # текст настоящего напоминания
+    assert "приедет мастер" in sent[-2] and "Невский пр., 10" in sent[-2]
+    assert "Новая заявка №1" in sent[-1]
+
+
+@pytest.mark.asyncio
+async def test_reminder_preview_only_in_demo(tmp_path, monkeypatch):
+    h = await make(tmp_path, monkeypatch, niche="drycleaning")
+    await h.book(ANNA, NICHES["drycleaning"].menu_book)
+    assert not any("Так выглядит напоминание" in s.text for s in h.bot.sent)
+
+
+@pytest.mark.parametrize("minutes,expected", [
+    (120, "2 часа"), (60, "час"), (300, "5 часов"), (90, "90 минут"), (1320, "22 часа"), (660, "11 часов"),
+])
+def test_reminder_period_wording(minutes, expected):
+    from bot.texts import _remind_period
+
+    assert _remind_period(minutes) == expected
+
+
+@pytest.mark.asyncio
 async def test_full_scenario_ends_with_sales_message(tmp_path, monkeypatch):
     h = await demo(tmp_path, monkeypatch)
     await choose(h, ANNA, "drycleaning")

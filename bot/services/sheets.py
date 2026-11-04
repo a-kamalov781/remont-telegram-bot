@@ -13,7 +13,11 @@ log = logging.getLogger(__name__)
 def header(niche: Niche) -> list[str]:
     columns = ["ID", "Создана", niche.visit_label, "Статус", "Имя", "Телефон", "Услуга", niche.object_label,
                niche.problem_label, "Telegram", "Комментарий мастера"]
-    return [*columns, "Адрес"] if niche.ask_address else columns
+    if niche.ask_address:
+        columns.append("Адрес")
+    if niche.has_price:
+        columns.append("Стоимость, ₽")
+    return columns
 
 
 class SheetsExporter:
@@ -40,7 +44,11 @@ class SheetsExporter:
             status_text, o.name, o.phone, o.service_name, o.device, o.problem,
             f"@{o.username}" if o.username else str(o.user_id), o.admin_note,
         ]
-        return [*row, o.address] if self.niche.ask_address else row
+        if self.niche.ask_address:
+            row.append(o.address)
+        if self.niche.has_price:
+            row.append(str(o.price) if o.price else "")
+        return row
 
     async def upsert(self, o: Order) -> None:
         """Обновляет строку по ID или добавляет новую. В отдельном потоке, чтобы не блокировать бота.

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import aiosqlite
 
 from bot.niches import ACTIVE_STATUSES, DEFAULT_NICHE, NICHES, Niche, get_niche
+from bot.services.price import format_rub
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS services (
@@ -59,6 +60,11 @@ CREATE TABLE IF NOT EXISTS relay_messages (
     created_at TEXT NOT NULL,
     PRIMARY KEY (chat_id, message_id)
 );
+CREATE TABLE IF NOT EXISTS relay_rate (
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_relay_rate_user ON relay_rate(user_id);
 """
 
 # Колонки, появившиеся после первой версии. Строки старой базы получают значения по умолчанию,
@@ -70,6 +76,7 @@ MIGRATIONS: dict[str, dict[str, str]] = {
         "demo": "INTEGER NOT NULL DEFAULT 0",
         "address": "TEXT NOT NULL DEFAULT ''",
         "quote_answer": "TEXT NOT NULL DEFAULT ''",
+        "price": "INTEGER",
     },
 }
 
@@ -100,6 +107,7 @@ class Order:
     demo: bool = False
     address: str = ""
     quote_answer: str = ""
+    price: int | None = None
 
     @classmethod
     def from_row(cls, r: aiosqlite.Row) -> "Order":
@@ -110,7 +118,7 @@ class Order:
             slot=datetime.fromisoformat(r["slot"]), status=r["status"],
             admin_note=r["admin_note"], created_at=datetime.fromisoformat(r["created_at"]),
             reminded=bool(r["reminded"]), niche=r["niche"], demo=bool(r["demo"]),
-            address=r["address"], quote_answer=r["quote_answer"],
+            address=r["address"], quote_answer=r["quote_answer"], price=r["price"],
         )
 
     @property
@@ -119,6 +127,8 @@ class Order:
 
     @property
     def status_text(self) -> str:
+        if self.status == "ready" and self.price and self.preset.has_price:
+            return f"✅ Готово — к оплате {format_rub(self.price)}"
         return self.preset.status_text(self.status)
 
     @property
@@ -269,6 +279,11 @@ class Database:
             await db.execute("UPDATE orders SET quote_answer=? WHERE id=?", (answer, oid))
             await db.commit()
 
+    async def set_price(self, oid: int, price: int) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("UPDATE orders SET price=? WHERE id=?", (price, oid))
+            await db.commit()
+
     async def set_slot(self, oid: int, slot: datetime, status: str = "confirmed") -> None:
         async with aiosqlite.connect(self.path) as db:
             await db.execute(
@@ -331,6 +346,20 @@ class Database:
             return {s: n for s, n in await cur.fetchall()}
 
     # ---------- переписка клиента с мастером ----------
+    async def relay_allow(self, user_id: int, now: datetime, limit: int, window: timedelta) -> bool:
+        """Учитывает сообщение клиента и говорит, можно ли его переслать. Отклонённые не учитываются,
+        поэтому окно освобождается само. Вставка с условием атомарна при параллельных сообщениях."""
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("DELETE FROM relay_rate WHERE created_at<?", ((now - window).isoformat(),))
+            cur = await db.execute(
+                "INSERT INTO relay_rate(user_id, created_at) SELECT ?,? "
+                "WHERE (SELECT COUNT(*) FROM relay_rate WHERE user_id=?) < ?",
+                (user_id, now.isoformat(), user_id, limit),
+            )
+            allowed = cur.rowcount == 1
+            await db.commit()
+            return allowed
+
     async def save_relay(self, sent: Iterable[tuple[int, int]], client_id: int, demo: bool, now: datetime) -> None:
         """Запоминает, какому клиенту принадлежит сообщение у мастера. Текст переписки не хранится."""
         async with aiosqlite.connect(self.path) as db:

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from aiogram import BaseMiddleware, F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
@@ -21,6 +21,10 @@ from bot.services.slots import ScheduleConfig, fmt_dt, free_slots, working_dates
 router = Router(name="client")
 
 PHONE_RE = re.compile(r"^\+?[0-9][0-9\-\s()]{9,17}$")
+
+# Антиспам переписки: сколько сообщений одного клиента доходит до мастера за окно времени
+RELAY_LIMIT = 10
+RELAY_WINDOW = timedelta(minutes=10)
 
 
 class NicheMiddleware(BaseMiddleware):
@@ -340,6 +344,9 @@ def _is_free_message(m: Message) -> bool:
 async def message_to_master(m: Message, db: Database, settings: Settings, notifier: Notifier, niche: Niche):
     if not settings.demo_mode and m.from_user.id in settings.admin_ids:
         await m.answer(texts.admin_relay_hint())
+        return
+    if not await db.relay_allow(m.from_user.id, settings.now(), RELAY_LIMIT, RELAY_WINDOW):
+        await m.answer(texts.relay_too_many())
         return
     orders = await db.user_orders(m.from_user.id, niche=niche.key if settings.demo_mode else None)
     closed = {niche.final.code, CANCELLED.code}

@@ -93,6 +93,15 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
     await admin.note(m, command, db, notifier)
 
 
+@router.message(Command("price"))
+async def price(m: Message, command: CommandObject, db: Database):
+    first = (command.args or "").split(maxsplit=1)[:1]
+    if first and first[0].isdigit() and not await _own_order(db, m.from_user.id, int(first[0])):
+        await m.answer("Заявка не найдена.")
+        return
+    await admin.price(m, command, db)
+
+
 router.message.register(relay.answer_client, relay.RelayReply())
 
 

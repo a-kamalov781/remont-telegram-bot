@@ -14,6 +14,7 @@ from bot.db import DEMO_EVENT_FINISHED, Database
 from bot.handlers.relay import RelayReply, answer_client
 from bot.niches import get_niche, status_label
 from bot.services.notify import Notifier
+from bot.services.price import parse_amount
 
 router = Router(name="admin")
 
@@ -94,10 +95,33 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
     await db.set_status(oid, o.status, note=text)
     # Новая сумма — новый вопрос клиенту, прежний ответ больше не действует
     await db.set_quote_answer(oid, "")
+    status = o.preset.status(o.status)
+    amount = parse_amount(text) if status and status.approval else None
+    if amount:
+        await db.set_price(oid, amount)
     o = await db.order(oid)
     await notifier.status_changed(o)
     if not o.demo:
-        await m.answer(f"Комментарий к №{oid} отправлен клиенту.")
+        await m.answer(texts.note_sent(o, amount is not None))
+
+
+@router.message(Command("price"))
+async def price(m: Message, command: CommandObject, db: Database):
+    parts = (command.args or "").split(maxsplit=1)
+    amount = parse_amount(parts[1]) if len(parts) == 2 and parts[0].isdigit() else None
+    if not amount:
+        await m.answer(texts.price_format_error())
+        return
+    oid = int(parts[0])
+    o = await db.order(oid)
+    if not o:
+        await m.answer("Заявка не найдена.")
+        return
+    if not o.preset.has_price:
+        await m.answer(texts.price_wrong_niche())
+        return
+    await db.set_price(oid, amount)
+    await m.answer(texts.price_saved(await db.order(oid)))
 
 
 @router.message(Command("move"))

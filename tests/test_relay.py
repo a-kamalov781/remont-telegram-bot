@@ -1,6 +1,7 @@
 """Переписка: клиент пишет в бота, сообщение приходит мастеру, мастер отвечает оттуда же."""
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timedelta
 
 import pytest
@@ -191,6 +192,61 @@ async def test_reply_to_a_message_without_record_is_not_delivered(tmp_path, monk
     before = len(h.texts_to(ANNA))
     await h.dp.feed_update(h.bot, reply("Куда это?", ADMIN, 999_999))
     assert len(h.texts_to(ANNA)) == before
+
+
+# ---------- антиспам ----------
+
+def forwarded_count(h, user=ADMIN):
+    return sum("Сообщение от клиента" in s.text for s in h.bot.sent if s.chat_id == user.id)
+
+
+@pytest.mark.asyncio
+async def test_eleventh_message_in_window_is_not_forwarded(tmp_path, monkeypatch):
+    h = await repair(tmp_path, monkeypatch)
+    for i in range(10):
+        await h.say(f"Сообщение {i}", ANNA)
+    assert forwarded_count(h) == 10
+
+    await h.say("Одиннадцатое", ANNA)
+    assert forwarded_count(h) == 10
+    assert h.last_to(ANNA).text == "Слишком много сообщений, мастер ответит на предыдущие"
+
+    # Лимит у каждого клиента свой
+    await h.say("От Бориса", BORIS)
+    assert forwarded_count(h) == 11
+
+
+@pytest.mark.asyncio
+async def test_limit_frees_up_after_window(tmp_path, monkeypatch):
+    h = await repair(tmp_path, monkeypatch)
+    for i in range(11):
+        await h.say(f"Сообщение {i}", ANNA)
+    assert forwarded_count(h) == 10
+
+    with sqlite3.connect(h.settings.db_path) as con:
+        old = (h.settings.now() - timedelta(minutes=10, seconds=1)).isoformat()
+        con.execute("UPDATE relay_rate SET created_at=?", (old,))
+    await h.say("Прошло десять минут", ANNA)
+    assert forwarded_count(h) == 11
+    with sqlite3.connect(h.settings.db_path) as con:
+        assert con.execute("SELECT COUNT(*) FROM relay_rate").fetchone()[0] == 1  # старые записи удалены
+
+
+@pytest.mark.asyncio
+async def test_limit_counts_photos_but_not_booking_steps_or_master(tmp_path, monkeypatch):
+    h = await repair(tmp_path, monkeypatch)
+    await h.book(ANNA, REPAIR.menu_book)  # шаги записи не считаются
+    for _ in range(10):
+        await h.dp.feed_update(h.bot, photo(ANNA))
+    assert forwarded_count(h) == 10
+    await h.dp.feed_update(h.bot, photo(ANNA))
+    assert forwarded_count(h) == 10
+
+    # Ответы мастера лимитом не ограничены
+    card = from_client(h)
+    for i in range(12):
+        await h.dp.feed_update(h.bot, reply(f"Ответ {i}", ADMIN, card.message_id))
+    assert "Ответ 11" in h.last_to(ANNA).text
 
 
 # ---------- демо ----------
