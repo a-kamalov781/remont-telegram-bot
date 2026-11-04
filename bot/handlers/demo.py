@@ -1,4 +1,4 @@
-"""Демо-режим: выбор ниши и действия мастера посетителя над своими демо-заявками.
+"""Демо-режим: выбор ниши и действия посетителя в роли сотрудника над своими демо-заявками.
 
 Роутер подключён после admin и перед client. Администраторов обрабатывает admin,
 сюда попадают все остальные, и им доступны только их собственные демо-заявки.
@@ -14,7 +14,7 @@ from bot import keyboards as kb
 from bot import texts
 from bot.config import Settings
 from bot.db import Database, Order
-from bot.handlers import admin, client, relay
+from bot.handlers import admin, client, quote, relay
 from bot.niches import NICHES, get_niche
 from bot.services.notify import Notifier
 
@@ -69,7 +69,7 @@ async def pick_niche(c: CallbackQuery, state: FSMContext, db: Database, settings
     await c.answer()
 
 
-# ---------- посетитель как мастер своей заявки ----------
+# ---------- посетитель как сотрудник своей заявки ----------
 
 @router.message(Command("order"))
 async def order_card(m: Message, command: CommandObject, db: Database):
@@ -81,34 +81,36 @@ async def order_card(m: Message, command: CommandObject, db: Database):
     if not o:
         await m.answer("Заявка не найдена.")
         return
-    await m.answer(texts.admin_order_with_status(o), reply_markup=kb.admin_status_kb(o.preset, o.id, current=o.status))
+    await m.answer(texts.admin_order(o), reply_markup=kb.admin_card_kb(o))
 
 
 @router.message(Command("note"))
-async def note(m: Message, command: CommandObject, db: Database, notifier: Notifier):
+async def note(m: Message, command: CommandObject, db: Database, notifier: Notifier, state: FSMContext):
     parts = (command.args or "").split(maxsplit=1)
     if len(parts) == 2 and parts[0].isdigit() and not await _own_order(db, m.from_user.id, int(parts[0])):
         await m.answer("Заявка не найдена.")
         return
-    await admin.note(m, command, db, notifier)
+    await admin.note(m, command, db, notifier, state)
 
 
 @router.message(Command("price"))
-async def price(m: Message, command: CommandObject, db: Database):
+async def price(m: Message, command: CommandObject, db: Database, state: FSMContext):
     first = (command.args or "").split(maxsplit=1)[:1]
     if first and first[0].isdigit() and not await _own_order(db, m.from_user.id, int(first[0])):
         await m.answer("Заявка не найдена.")
         return
-    await admin.price(m, command, db)
+    await admin.price(m, command, db, state)
 
 
 router.message.register(relay.answer_client, relay.RelayReply())
+router.message.register(quote.amount_entered, quote.QuoteInput.amount, quote.AMOUNT_INPUT)
+router.callback_query.register(quote.cancel_input, F.data.startswith("qcancel:"))
 
 
 @router.callback_query(F.data.startswith("adm:"))
-async def status_button(c: CallbackQuery, db: Database, notifier: Notifier, settings: Settings):
+async def status_button(c: CallbackQuery, db: Database, notifier: Notifier, settings: Settings, state: FSMContext):
     oid_s = c.data.rsplit(":", 1)[-1]
     if not oid_s.isdigit() or not await _own_order(db, c.from_user.id, int(oid_s)):
         await c.answer("Это не ваша заявка", show_alert=True)
         return
-    await admin.admin_action(c, db, notifier, settings)
+    await admin.admin_action(c, db, notifier, settings, state)

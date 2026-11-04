@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from html import escape
 from urllib.parse import quote
@@ -68,8 +69,28 @@ def booking_header(s: Settings, niche: Niche, service: str, day: date | None = N
 
 
 def _button_name(button: str) -> str:
-    """Подпись кнопки без эмодзи в начале."""
+    """Подпись без эмодзи в начале."""
     return button.split(" ", 1)[1]
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"\w+", text.casefold()))
+
+
+def _object_implied(device: str, service: str) -> bool:
+    """«пальто» при услуге «Чистка пальто» повторять незачем."""
+    words = _words(device)
+    return bool(words) and words <= _words(service)
+
+
+def _object_line(niche: Niche, device: str, service: str) -> str:
+    if not device.strip() or _object_implied(device, service):
+        return ""
+    return f"{niche.object_emoji} {niche.object_label}: {_e(device)}\n"
+
+
+def _problem_line(niche: Niche, problem: str) -> str:
+    return f"📝 {niche.problem_label}: {_e(problem)}\n" if problem.strip() else ""
 
 
 def welcome(s: Settings, niche: Niche) -> str:
@@ -79,7 +100,7 @@ def welcome(s: Settings, niche: Niche) -> str:
         "Здесь можно:\n"
         f"{points}\n"
         "• посмотреть цены и адрес,\n"
-        "• написать мастеру прямо в этот чат.\n\n"
+        f"• написать {niche.staff_dative} прямо в этот чат.\n\n"
         "Выберите действие в меню ниже."
     )
 
@@ -94,7 +115,7 @@ def contacts(s: Settings, niche: Niche) -> str:
 def prices(services, niche: Niche) -> str:
     lines = ["<b>Цены</b>\n"]
     for sv in services:
-        price = f"от {sv['price_from']} ₽" if sv["price_from"] else "бесплатно"
+        price = f"от {format_rub(sv['price_from'])}" if sv["price_from"] else "бесплатно"
         lines.append(f"• <b>{sv['name']}</b> — {price}\n  <i>{sv['description']}</i>")
     lines.append(f"\n{niche.price_note} Нажмите «Записаться», чтобы выбрать время.")
     return "\n".join(lines)
@@ -111,8 +132,8 @@ def order_summary(niche: Niche, name: str, phone: str, service_name: str, device
         "<b>Проверьте заявку</b>\n\n"
         f"👤 {_e(name)}\n📱 {phone}\n"
         f"{niche.emoji} {service_name}\n"
-        f"{niche.object_emoji} {niche.object_label}: {_e(device) or '—'}\n"
-        f"📝 {niche.problem_label}: {_e(problem) or '—'}\n"
+        f"{_object_line(niche, device, service_name)}"
+        f"{_problem_line(niche, problem)}"
         f"{place}"
         f"🕒 {niche.visit_label}: <b>{fmt_dt(slot)}</b>"
     )
@@ -123,7 +144,8 @@ def order_created(o: Order, s: Settings) -> str:
     name = _e(biz_name(s, niche))
     place = _visit_place(o, s)
     if o.address:
-        where = f"Вы записаны в <b>{name}</b>: мастер приедет по адресу {_e(o.address)}, <b>{fmt_dt(o.slot)}</b>."
+        where = (f"Вы записаны в <b>{name}</b>: {niche.staff_name} приедет по адресу {_e(o.address)}, "
+                 f"<b>{fmt_dt(o.slot)}</b>.")
     elif place:
         where = f"Вы записаны в <b>{name}</b>, {_e(place)}, <b>{fmt_dt(o.slot)}</b>."
     else:
@@ -134,7 +156,7 @@ def order_created(o: Order, s: Settings) -> str:
         f"{where}{link}\n\n"
         f"{niche.updates_text} "
         f"Проверить вручную — кнопка «{_button_name(niche.menu_status)}».\n"
-        "Есть вопрос — просто напишите сюда, мастер ответит в этом чате."
+        f"Есть вопрос — просто напишите сюда, {niche.staff_name} ответит в этом чате."
     )
 
 
@@ -149,16 +171,21 @@ def _note_line(o: Order, prefix: str) -> str:
 def order_status_card(o: Order) -> str:
     niche = o.preset
     place = f"\n🏠 {_e(o.address)}" if o.address else ""
+    shown = o.device.strip() and not _object_implied(o.device, o.service_name)
+    device = f" · {_e(o.device)}" if shown else ""
     return (
         f"<b>Заявка №{o.id}</b> — {o.status_text}\n"
-        f"{niche.emoji} {o.service_name} · {_e(o.device) or niche.object_missing}\n"
-        f"🕒 {niche.visit_label}: {fmt_dt(o.slot)}{place}{_price_line(o)}{_note_line(o, 'Мастер: ')}"
+        f"{niche.emoji} {o.service_name}{device}\n"
+        f"🕒 {niche.visit_label}: {fmt_dt(o.slot)}{place}{_price_line(o)}"
+        f"{_note_line(o, f'{niche.staff_title}: ')}"
     )
 
 
 def status_changed(o: Order) -> str:
+    status = o.preset.status(o.status)
+    price = _price_line(o) if status and status.approval else ""
     question = "\n\nСогласны с этой стоимостью?" if o.awaits_quote_answer else ""
-    return f"🔔 Заявка №{o.id}: <b>{o.status_text}</b>{_note_line(o, '')}{question}"
+    return f"🔔 Заявка №{o.id}: <b>{o.status_text}</b>{price}{_note_line(o, '')}{question}"
 
 
 def reminder(o: Order, s: Settings) -> str:
@@ -174,33 +201,50 @@ def reminder(o: Order, s: Settings) -> str:
     )
 
 
+def _card_title(o: Order) -> str:
+    if o.status == "new":
+        return f"🆕 <b>Новая заявка №{o.id}</b>"
+    return f"<b>Заявка №{o.id} · {_button_name(o.status_text)}</b>"
+
+
 def admin_order(o: Order) -> str:
+    """Карточка заявки у сотрудника. Статус виден в заголовке."""
     niche = o.preset
     tg = f"@{o.username}" if o.username else f"id {o.user_id}"
     place = f"🏠 {_e(o.address)}\n" if o.address else ""
     return (
-        f"🆕 <b>Новая заявка №{o.id}</b>\n\n"
+        f"{_card_title(o)}\n\n"
         f"👤 {_e(o.name)} · {o.phone} · {tg}\n"
         f"{niche.emoji} {o.service_name}\n"
-        f"{niche.object_emoji} {_e(o.device) or '—'}\n"
-        f"📝 {_e(o.problem) or '—'}\n"
+        f"{_object_line(niche, o.device, o.service_name)}"
+        f"{_problem_line(niche, o.problem)}"
         f"{place}"
         f"🕒 <b>{fmt_dt(o.slot)}</b>"
         f"{_price_line(o)}"
     )
 
 
-def admin_order_with_status(o: Order) -> str:
-    return f"{admin_order(o)}\n\nСтатус: <b>{o.status_text}</b>"
-
-
 def admin_order_line(o: Order) -> str:
     return f"{o.slot.strftime('%H:%M')} №{o.id} {_e(o.name)} · {o.phone} · {o.service_name} — {o.status_text}"
 
 
-def quote_hint(o: Order) -> str:
-    return (f"Укажите сумму — клиент получит кнопки «Согласен» и «Перезвоните мне»:\n"
-            f"<code>/note {o.id} 8 500 ₽, замена колодок</code>")
+# ---------- стоимость ----------
+
+def quote_prompt(o: Order) -> str:
+    return f"Заявка №{o.id}. Введите сумму и что делаем (например: 8500 замена колодок)"
+
+
+def quote_retry() -> str:
+    return "Не нашёл сумму. Напишите, например: 8500 замена колодок"
+
+
+def quote_cancelled(o: Order) -> str:
+    return f"Ввод суммы отменён, клиенту ничего не отправлено.\n\n{admin_order(o)}"
+
+
+def quote_sent(o: Order) -> str:
+    return (f"💰 Заявка №{o.id}: стоимость <b>{format_rub(o.price)}</b> записана и отправлена клиенту. "
+            "Его ответ придёт сюда.")
 
 
 def price_saved(o: Order) -> str:
@@ -231,47 +275,50 @@ QUOTE_CALL = "call"
 QUOTE_ANSWERS = (QUOTE_YES, QUOTE_CALL)
 
 
-def quote_client_ack(answer: str) -> str:
+def quote_client_ack(answer: str, niche: Niche) -> str:
     if answer == QUOTE_YES:
-        return "✅ Спасибо! Передали мастеру, что вы согласны."
-    return "📞 Передали мастеру, он вам перезвонит."
+        return f"✅ Спасибо! Передали {niche.staff_dative}, что вы согласны."
+    return f"📞 Передали {niche.staff_dative}, вам перезвонят."
 
 
 def quote_master_answer(o: Order, answer: str) -> str:
     verdict = "✅ Клиент согласен" if answer == QUOTE_YES else "📞 Клиент просит перезвонить"
-    return f"<b>{verdict}</b> — заявка №{o.id}\n👤 {_e(o.name)} · {o.phone}\n💬 {_e(o.admin_note)}"
+    return f"<b>{verdict}</b> — заявка №{o.id}\n👤 {_e(o.name)} · {o.phone}{_price_line(o)}{_note_line(o, '')}"
 
 
-# ---------- переписка клиента с мастером ----------
+# ---------- переписка клиента с сотрудником ----------
 
 REPLY_HINT = "Чтобы ответить клиенту, ответьте на это сообщение (Reply)."
-DEMO_REPLY_HINT = ("👆 Так мастер видит сообщение клиента. Ответьте на него через Reply, "
-                   "и ответ придёт клиенту в этот же чат.")
 
 
-def relay_to_master(user, o: Order | None, body: str | None, demo: bool) -> str:
-    """Сообщение мастеру. Если body пуст, само сообщение клиента идёт следом копией (фото, файл, длинный текст)."""
+def _demo_reply_hint(niche: Niche) -> str:
+    return (f"👆 Так {niche.staff_name} видит сообщение клиента. Ответьте на него через Reply, "
+            "и ответ придёт клиенту в этот же чат.")
+
+
+def relay_to_master(user, o: Order | None, body: str | None, demo: bool, niche: Niche) -> str:
+    """Сообщение сотруднику. Если body пуст, само сообщение клиента идёт следом копией (фото, файл, длинный текст)."""
     who = _e(user.full_name) + (f" · @{user.username}" if user.username else "")
     context = f"\n📋 Заявка №{o.id} · {_e(o.name)} · {o.phone} · {o.service_name} — {o.status_text}" if o else ""
     text = f"\n\n{_e(body)}" if body else ""
-    hint = DEMO_REPLY_HINT if demo else f"<i>{REPLY_HINT}</i>"
+    hint = _demo_reply_hint(niche) if demo else f"<i>{REPLY_HINT}</i>"
     return f"💬 <b>Сообщение от клиента</b>\n👤 {who}{context}{text}\n\n{hint}"
 
 
-def relay_ack() -> str:
-    return "✉️ Передали мастеру, он ответит в этом чате."
+def relay_ack(niche: Niche) -> str:
+    return f"✉️ Передали {niche.staff_dative}, ответ придёт в этот чат."
 
 
-def relay_too_many() -> str:
-    return "Слишком много сообщений, мастер ответит на предыдущие"
+def relay_too_many(niche: Niche) -> str:
+    return f"Слишком много сообщений, {niche.staff_name} ответит на предыдущие"
 
 
 def relay_failed() -> str:
     return "⚠️ Не получилось передать сообщение. Попробуйте позже или позвоните нам."
 
 
-def master_answer(body: str, demo: bool) -> str:
-    text = f"💬 <b>Мастер:</b> {_e(body)}"
+def master_answer(body: str, demo: bool, niche: Niche) -> str:
+    text = f"💬 <b>{niche.staff_title}:</b> {_e(body)}"
     return f"👤 <i>Клиент получил:</i>\n\n{text}" if demo else text
 
 
@@ -287,9 +334,9 @@ def admin_relay_hint() -> str:
     return "Это чат с ботом. Чтобы ответить клиенту, нажмите Reply на его сообщении."
 
 
-def admin_help() -> str:
+def admin_help(niche: Niche) -> str:
     return (
-        "<b>Команды мастера</b>\n"
+        f"<b>Команды {niche.staff_genitive}</b>\n"
         "/today — записи на сегодня\n"
         "/tomorrow — записи на завтра\n"
         "/open — все незакрытые заявки\n"
@@ -317,8 +364,8 @@ def demo_intro(niche: Niche) -> str:
     return (
         f"{niche.emoji} <b>{niche.name}</b>\n\n"
         f"Представьте, что вы клиент {niche.client_of} {niche.demo_name} ({niche.demo_street}). "
-        "Сейчас вы пройдёте путь клиента, а потом увидите, как заявку получает владелец.\n\n"
-        "Напишите в чат любой вопрос — увидите, как он придёт мастеру и как мастер ответит.\n\n"
+        f"Сейчас вы пройдёте путь клиента, а потом увидите, как заявку получает {niche.staff_name}.\n\n"
+        f"Напишите в чат любой вопрос — увидите, как он придёт {niche.staff_dative} и как {niche.staff_name} ответит.\n\n"
         "<i>Название, адрес и телефон в демо вымышленные.</i>\n"
         "Сменить бизнес — /niche"
     )
@@ -329,8 +376,8 @@ def demo_phone_note() -> str:
 
 
 def demo_new_card(o: Order) -> str:
-    return (f"{admin_order(o)}\n\nСтатус: <b>{o.status_text}</b>\n\n"
-            "👆 Так заявку видит мастер. Нажмите статус — и посмотрите, что получит клиент.")
+    return (f"{admin_order(o)}\n\n"
+            f"👆 Так заявку видит {o.preset.staff_name}. Нажмите статус — и посмотрите, что получит клиент.")
 
 
 def demo_client_view(o: Order) -> str:
@@ -339,13 +386,13 @@ def demo_client_view(o: Order) -> str:
 
 def demo_master_card(o: Order) -> str:
     status = o.preset.status(o.status)
-    if status and status.approval and not o.admin_note:
-        hint = quote_hint(o)
+    if status and status.approval and not o.price:
+        hint = f"Сумма не указана. Нажмите «{_button_name(status.text)}» ещё раз и введите её."
     elif o.status == "ready":
-        hint = f"Клиент узнал о готовности без звонка. Нажмите «{o.preset.final.text}», чтобы завершить сценарий."
+        hint = f"Клиент узнал о готовности без звонка. Нажмите «{_button_name(o.preset.final.text)}», чтобы завершить сценарий."
     else:
         hint = "👆 Это уже у клиента, без звонков и вопросов «ну что там?». Нажмите следующий статус."
-    return f"🛠 <b>Карточка мастера</b>, заявка №{o.id}\nСтатус: <b>{o.status_text}</b>\n\n{hint}"
+    return f"🛠 <b>Заявка №{o.id} · {_button_name(o.status_text)}</b>\n\n{hint}"
 
 
 def demo_quote_hint(o: Order) -> str:
@@ -368,7 +415,7 @@ def demo_reminder_preview(o: Order, s: Settings) -> str:
 
 def demo_quote_card(o: Order, answer: str) -> str:
     return (f"{quote_master_answer(o, answer)}\n\n"
-            "👆 Так мастеру приходит ответ клиента. Нажмите следующий статус.")
+            f"👆 Так {o.preset.staff_dative} приходит ответ клиента. Нажмите следующий статус.")
 
 
 def demo_finish(s: Settings) -> str:

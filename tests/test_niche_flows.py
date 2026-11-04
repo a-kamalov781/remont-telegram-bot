@@ -18,11 +18,11 @@ async def test_drycleaning_booking_flow(tmp_path, monkeypatch):
     assert "«Белый Лист»" in h.texts_to(CLIENT)[-1]
     assert h.bot.sent[-2].markup.keyboard[0][0].text == "🧺 Сдать вещь в чистку"
 
-    await h.book(CLIENT, niche.menu_book, device="Пальто", problem="Пятно от кофе")
+    await h.book(CLIENT, niche.menu_book, device="Шерстяное пальто", problem="Пятно от кофе")
     sent = "\n".join(h.texts_to(CLIENT))
     assert niche.object_prompt in sent and niche.problem_prompt in sent
     assert "Какое устройство" not in sent
-    assert "Вещь: Пальто" in sent and "Что сделать: Пятно от кофе" in sent
+    assert "Вещь: Шерстяное пальто" in sent and "Что сделать: Пятно от кофе" in sent
     assert "Вы записаны в <b>«Белый Лист»</b>" in sent
 
     o = await h.db.order(1)
@@ -57,14 +57,14 @@ async def test_autoservice_booking_and_quote_approval(tmp_path, monkeypatch):
     assert "Марка, модель, госномер" in "\n".join(h.texts_to(CLIENT))
     assert (await h.db.order(1)).device == "Kia Rio, А123ВС 178"
 
-    # Вход в согласование: мастеру подсказка, клиенту статус без кнопок
+    # Вход в согласование: сотрудника спрашивают сумму, клиенту пока ничего не приходит
+    before = len(h.texts_to(CLIENT))
     await h.press("adm:approval:1", ADMIN)
-    assert h.last_to(CLIENT).text == "🔔 Заявка №1: <b>💰 Согласование стоимости</b>"
-    assert h.last_to(CLIENT).buttons() == []
-    assert "/note 1" in h.last_to(ADMIN).text
+    assert len(h.texts_to(CLIENT)) == before
+    assert "Введите сумму и что делаем" in h.last_to(ADMIN).text
 
-    # Сумма через /note — клиенту приходят кнопки
-    await h.say("/note 1 8 500 ₽, замена колодок", ADMIN)
+    # Сумма следующим сообщением — клиенту приходят кнопки
+    await h.say("8 500 ₽, замена колодок", ADMIN)
     offer = h.last_to(CLIENT)
     assert "8 500 ₽" in offer.text and "Согласны" in offer.text
     assert offer.buttons() == [("✅ Согласен", "quote:yes:1"), ("📞 Перезвоните мне", "quote:call:1")]
@@ -109,7 +109,7 @@ async def test_quote_buttons_do_not_appear_outside_approval(tmp_path, monkeypatc
     # Прежний комментарий не становится суммой при входе в согласование
     await h.press("adm:approval:1", ADMIN)
     assert h.last_to(CLIENT).buttons() == []
-    assert (await h.db.order(1)).admin_note == ""
+    assert (await h.db.order(1)).price is None
 
 
 @pytest.mark.asyncio

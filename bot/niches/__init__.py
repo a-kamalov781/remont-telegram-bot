@@ -10,8 +10,11 @@ NICHES: dict[str, Niche] = {
 }
 DEFAULT_NICHE = repair.PRESET.key
 
+# Прежние подписи: у тех, кто уже открывал бота, кнопка живёт в клавиатуре до следующего меню
+LEGACY_BOOK_BUTTONS = frozenset({"🚗 Записаться на диагностику"})
+
 # Кнопки всех ниш: у посетителя демо может остаться клавиатура прежней ниши
-BOOK_BUTTONS = frozenset(n.menu_book for n in NICHES.values())
+BOOK_BUTTONS = frozenset(n.menu_book for n in NICHES.values()) | LEGACY_BOOK_BUTTONS
 STATUS_BUTTONS = frozenset(n.menu_status for n in NICHES.values())
 
 # Статусы, в которых заявка занимает время. Порядок важен только для читаемости

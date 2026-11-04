@@ -119,7 +119,10 @@ class Harness:
         async def edit_text(msg, text=None, reply_markup=None, **kw):
             sent.append(Sent(msg.chat.id, text or "", reply_markup))
 
+        markups = self.markups = []
+
         async def edit_markup(msg, reply_markup=None, **kw):
+            markups.append(Sent(msg.chat.id, "", reply_markup))
             return True
 
         async def cb_answer(query, text=None, **kw):

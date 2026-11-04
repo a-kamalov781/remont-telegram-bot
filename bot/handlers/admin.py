@@ -1,20 +1,22 @@
-"""Команды мастера. Доступны только ADMIN_IDS."""
+"""Команды сотрудника. Доступны только ADMIN_IDS."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.filters import BaseFilter, Command, CommandObject
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot import keyboards as kb
 from bot import texts
 from bot.config import Settings
 from bot.db import DEMO_EVENT_FINISHED, Database
+from bot.handlers import quote
 from bot.handlers.relay import RelayReply, answer_client
 from bot.niches import get_niche, status_label
 from bot.services.notify import Notifier
-from bot.services.price import parse_amount
+from bot.services.price import parse_amount, parse_quote
 
 router = Router(name="admin")
 
@@ -36,8 +38,8 @@ def _parse_dt(args: str) -> datetime | None:
 
 
 @router.message(Command("admin", "help"))
-async def admin_help(m: Message):
-    await m.answer(texts.admin_help())
+async def admin_help(m: Message, settings: Settings):
+    await m.answer(texts.admin_help(get_niche(settings.niche)))
 
 
 async def _day(m: Message, db: Database, day: datetime, title: str):
@@ -77,12 +79,11 @@ async def order_card(m: Message, command: CommandObject, db: Database):
     if not o:
         await m.answer("Заявка не найдена.")
         return
-    await m.answer(texts.admin_order(o) + f"\n\nСтатус: {o.status_text}",
-                   reply_markup=kb.admin_status_kb(o.preset, o.id, current=o.status if o.demo else None))
+    await m.answer(texts.admin_order(o), reply_markup=kb.admin_card_kb(o))
 
 
 @router.message(Command("note"))
-async def note(m: Message, command: CommandObject, db: Database, notifier: Notifier):
+async def note(m: Message, command: CommandObject, db: Database, notifier: Notifier, state: FSMContext):
     parts = (command.args or "").split(maxsplit=1)
     if len(parts) < 2 or not parts[0].isdigit():
         await m.answer("Формат: /note 12 Нужна замена платы, срок 3 дня")
@@ -92,13 +93,20 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
     if not o:
         await m.answer("Заявка не найдена.")
         return
-    await db.set_status(oid, o.status, note=text)
-    # Новая сумма — новый вопрос клиенту, прежний ответ больше не действует
-    await db.set_quote_answer(oid, "")
-    status = o.preset.status(o.status)
-    amount = parse_amount(text) if status and status.approval else None
+    # Запасной путь: нажали «Согласование стоимости», а сумму отправили командой
+    code = quote.approval_code(o) if await quote.pending_order(state) == oid else o.status
+    if await quote.pending_order(state) == oid:
+        await state.clear()
+    status = o.preset.status(code)
+    amount = None
+    if status and status.approval:
+        amount, comment = parse_quote(text)
     if amount:
-        await db.set_price(oid, amount)
+        await db.set_quote(oid, code, amount, comment)
+    else:
+        await db.set_status(oid, code, note=text)
+        # Новый текст — новый вопрос клиенту, прежний ответ больше не действует
+        await db.set_quote_answer(oid, "")
     o = await db.order(oid)
     await notifier.status_changed(o)
     if not o.demo:
@@ -106,7 +114,7 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
 
 
 @router.message(Command("price"))
-async def price(m: Message, command: CommandObject, db: Database):
+async def price(m: Message, command: CommandObject, db: Database, state: FSMContext):
     parts = (command.args or "").split(maxsplit=1)
     amount = parse_amount(parts[1]) if len(parts) == 2 and parts[0].isdigit() else None
     if not amount:
@@ -121,6 +129,8 @@ async def price(m: Message, command: CommandObject, db: Database):
         await m.answer(texts.price_wrong_niche())
         return
     await db.set_price(oid, amount)
+    if await quote.pending_order(state) == oid:
+        await state.clear()
     await m.answer(texts.price_saved(await db.order(oid)))
 
 
@@ -183,10 +193,12 @@ async def stats(m: Message, db: Database, settings: Settings):
 
 
 router.message.register(answer_client, RelayReply())
+router.message.register(quote.amount_entered, quote.QuoteInput.amount, quote.AMOUNT_INPUT)
+router.callback_query.register(quote.cancel_input, F.data.startswith("qcancel:"))
 
 
 @router.callback_query(F.data.startswith("adm:"))
-async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier, settings: Settings):
+async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier, settings: Settings, state: FSMContext):
     _, action, oid_s = c.data.split(":")
     oid = int(oid_s)
     o = await db.order(oid)
@@ -194,30 +206,31 @@ async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier, setti
         await c.answer("Заявка не найдена", show_alert=True)
         return
     niche = o.preset
-    if action == "menu":
-        await c.message.edit_reply_markup(reply_markup=kb.admin_status_kb(niche, oid))
+    if action in ("menu", "less"):
+        markup = kb.admin_status_kb(o) if action == "menu" else kb.admin_card_kb(o)
+        await c.message.edit_reply_markup(reply_markup=markup)
         await c.answer()
         return
     status = niche.status(action)
     if status is None:
         await c.answer("Неизвестный статус", show_alert=True)
         return
+    if status.approval:
+        # Статус сменится и клиент узнает только после ввода суммы. Повторное нажатие позволяет исправить сумму
+        await quote.ask_amount(c, state, o)
+        return
     if action == o.status:
         await c.answer(f"Статус уже такой: {o.status_text}")
         return
+    await quote.stop_waiting(state)
     await db.set_status(oid, action)
-    if status.approval:
-        # Новое согласование начинается с чистого листа: сумма придёт через /note
-        await db.set_quote_answer(oid, "")
     o = await db.order(oid)
     if o.demo:
         # Старая карточка гаснет, новая придёт внизу чата вместе с сообщением клиента
-        await c.message.edit_text(texts.admin_order_with_status(o), reply_markup=None)
+        await c.message.edit_text(texts.admin_order(o), reply_markup=None)
         if action == niche.final.code:
             await db.demo_event(o.user_id, niche.key, DEMO_EVENT_FINISHED, settings.now())
     await notifier.status_changed(o)
     if not o.demo:
-        hint = f"\n\n{texts.quote_hint(o)}" if status.approval else ""
-        await c.message.edit_text(texts.admin_order_with_status(o) + hint,
-                                  reply_markup=kb.admin_status_kb(niche, oid))
+        await c.message.edit_text(texts.admin_order(o), reply_markup=kb.admin_card_kb(o))
     await c.answer(f"Клиенту отправлено: {o.status_text}")

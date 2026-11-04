@@ -1,6 +1,6 @@
-"""Уведомления: мастеру о новой заявке, клиенту о смене статуса и напоминание.
+"""Уведомления: сотруднику о новой заявке, клиенту о смене статуса и напоминание.
 
-В демо посетитель и клиент, и мастер своей заявки, поэтому оба потока сообщений уходят ему.
+В демо посетитель и клиент, и сотрудник своей заявки, поэтому оба потока сообщений уходят ему.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from bot import keyboards as kb
 from bot import texts
 from bot.config import Settings
 from bot.db import Order
-from bot.niches import CANCELLED
+from bot.niches import CANCELLED, Niche
 from bot.services.sheets import SheetsExporter
 
 log = logging.getLogger(__name__)
@@ -51,11 +51,11 @@ class Notifier:
             log.warning("copy to %s failed: %s", chat_id, e)
             return None
 
-    async def client_message(self, m: Message, o: Order | None, demo: bool) -> list[tuple[int, int]]:
-        """Передаёт сообщение клиента мастеру. Возвращает (чат, сообщение) всего, на что мастер может ответить."""
+    async def client_message(self, m: Message, o: Order | None, demo: bool, niche: Niche) -> list[tuple[int, int]]:
+        """Передаёт сообщение клиента сотруднику. Возвращает (чат, сообщение) всего, на что можно ответить."""
         targets = [m.chat.id] if demo else self.settings.admin_ids
         inline = m.text if m.text and len(m.text) <= RELAY_INLINE_LIMIT else None
-        header = texts.relay_to_master(m.from_user, o, inline, demo)
+        header = texts.relay_to_master(m.from_user, o, inline, demo, niche)
         sent: list[tuple[int, int]] = []
         for chat_id in targets:
             ids = [await self._send_get_id(chat_id, header)]
@@ -64,21 +64,20 @@ class Notifier:
             sent += [(chat_id, message_id) for message_id in ids if message_id]
         return sent
 
-    async def master_reply(self, m: Message, client_id: int, demo: bool) -> bool:
-        """Передаёт клиенту ответ мастера: текст с подписью, остальное (фото, файл, длинный текст) копией."""
+    async def master_reply(self, m: Message, client_id: int, demo: bool, niche: Niche) -> bool:
+        """Передаёт клиенту ответ сотрудника: текст с подписью, остальное (фото, файл, длинный текст) копией."""
         if m.text and len(m.text) <= RELAY_INLINE_LIMIT:
-            return await self._send(client_id, texts.master_answer(m.text, demo))
+            return await self._send(client_id, texts.master_answer(m.text, demo, niche))
         return await self._copy_get_id(client_id, m) is not None
 
     async def new_order(self, o: Order) -> None:
         if o.demo:
             # Настоящее напоминание в демо не приходит, поэтому показываем его сразу. Карточка остаётся внизу чата
             await self._send(o.user_id, texts.demo_reminder_preview(o, self.settings))
-            await self._send(o.user_id, texts.demo_new_card(o),
-                             reply_markup=kb.admin_status_kb(o.preset, o.id, current=o.status))
+            await self._send(o.user_id, texts.demo_new_card(o), reply_markup=kb.admin_card_kb(o))
             return
         for admin in self.settings.admin_ids:
-            await self._send(admin, texts.admin_order(o), reply_markup=kb.admin_new_order_kb(o.preset, o.id))
+            await self._send(admin, texts.admin_order(o), reply_markup=kb.admin_card_kb(o))
         await self.sheets.upsert(o)
 
     async def status_changed(self, o: Order) -> None:
@@ -99,11 +98,10 @@ class Notifier:
         elif o.awaits_quote_answer:
             await self._send(o.user_id, texts.demo_quote_hint(o))
         else:
-            await self._send(o.user_id, texts.demo_master_card(o),
-                             reply_markup=kb.admin_status_kb(o.preset, o.id, current=o.status))
+            await self._send(o.user_id, texts.demo_master_card(o), reply_markup=kb.admin_card_kb(o))
 
     async def quote_answered(self, o: Order, answer: str) -> None:
-        markup = kb.admin_status_kb(o.preset, o.id, current=o.status)
+        markup = kb.admin_card_kb(o)
         if o.demo:
             await self._send(o.user_id, texts.demo_quote_card(o, answer), reply_markup=markup)
             return

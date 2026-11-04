@@ -7,8 +7,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Status:
     code: str
-    text: str  # то, что видит клиент
-    button: str = ""  # подпись кнопки мастера, если отличается от text
+    text: str  # то, что видит клиент, и подпись кнопки у сотрудника
     holds_slot: bool = False  # пока заявка в этом статусе, её время занято
     approval: bool = False  # /note отправляет клиенту кнопки «Согласен» / «Перезвоните мне»
 
@@ -33,6 +32,7 @@ class Niche:
     demo_street: str
     demo_phone: str
     client_of: str  # «клиент химчистки» — для объяснения роли в демо
+    staff_name: str  # кто работает с заявками: «мастер», «приёмщик», «мастер-приёмщик»
     services: tuple[ServicePreset, ...]
     statuses: tuple[Status, ...]  # первый — код new, последний — код done
     slot_minutes: int
@@ -57,6 +57,23 @@ class Niche:
     ask_address: bool = False
     address_prompt: str = ""
 
+    def _staff_case(self, ending: str) -> str:
+        return "-".join(part + ending for part in self.staff_name.split("-"))
+
+    @property
+    def staff_dative(self) -> str:
+        """«написать мастеру-приёмщику»"""
+        return self._staff_case("у")
+
+    @property
+    def staff_genitive(self) -> str:
+        """«команды мастера-приёмщика»"""
+        return self._staff_case("а")
+
+    @property
+    def staff_title(self) -> str:
+        return self.staff_name.capitalize()
+
     @property
     def demo_address(self) -> str:
         return f"{self.demo_city}, {self.demo_street}"
@@ -78,9 +95,12 @@ class Niche:
     def final(self) -> Status:
         return self.statuses[-1]
 
-    @property
-    def next_after_new(self) -> Status:
-        return self.statuses[1]
+    def next_status(self, code: str) -> Status | None:
+        """Следующий шаг цепочки. После финального и отменённого статуса шага нет."""
+        codes = [s.code for s in self.statuses]
+        if code not in codes or code == self.final.code:
+            return None
+        return self.statuses[codes.index(code) + 1]
 
     @property
     def visit_status(self) -> str:
@@ -124,7 +144,7 @@ class Niche:
         if self.slot_minutes <= 0:
             out.append("slot_minutes должен быть больше нуля")
         for field in ("key", "name", "emoji", "demo_name", "demo_city", "demo_street", "demo_phone", "client_of",
-                      "menu_book", "menu_status", "book_prompt",
+                      "staff_name", "menu_book", "menu_status", "book_prompt",
                       "price_note", "updates_text", "object_name", "object_emoji", "object_prompt",
                       "object_missing", "problem_label", "problem_prompt", "visit_label",
                       "reminder_wait"):

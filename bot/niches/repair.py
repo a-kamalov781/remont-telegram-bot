@@ -10,6 +10,7 @@ PRESET = Niche(
     demo_street="Большой пр. П.С., 18",
     demo_phone="+7 (812) 000-00-01",
     client_of="сервиса по ремонту телефонов",
+    staff_name="мастер",
     services=(
         ServicePreset("Диагностика", "Бесплатно при ремонте у нас", 0),
         ServicePreset("Замена экрана телефона", "От 2 500 ₽, 1–2 часа", 2500),
@@ -20,7 +21,7 @@ PRESET = Niche(
     ),
     statuses=(
         Status("new", "🆕 Заявка принята", holds_slot=True),
-        Status("confirmed", "📅 Визит подтверждён", button="✅ Подтвердить", holds_slot=True),
+        Status("confirmed", "📅 Визит подтверждён", holds_slot=True),
         Status("received", "🔧 Устройство принято в ремонт"),
         Status("diagnosed", "🔍 Диагностика завершена"),
         Status("waiting_parts", "📦 Ожидаем запчасти"),
@@ -42,8 +43,8 @@ PRESET = Niche(
     object_emoji="💻",
     object_prompt="Какое устройство? (модель, например «iPhone 13» или «ноутбук Lenovo»)",
     object_missing="устройство не указано",
-    problem_label="Проблема",
-    problem_prompt="Опишите проблему в двух словах:",
+    problem_label="Что случилось",
+    problem_prompt="Что случилось? Опишите в двух словах:",
     visit_label="Визит",
     reminder_wait="ждём вас",
 )

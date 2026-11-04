@@ -6,6 +6,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardBu
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.niches import CANCELLED, NICHES, Niche
+from bot.services.price import format_rub
 from bot.services.slots import fmt_date
 from bot.texts import QUOTE_CALL, QUOTE_YES
 
@@ -31,7 +32,7 @@ def book_kb(niche: Niche) -> InlineKeyboardMarkup:
 def services_kb(services) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for s in services:
-        price = f" — от {s['price_from']} ₽" if s["price_from"] else ""
+        price = f" — от {format_rub(s['price_from'])}" if s["price_from"] else ""
         b.button(text=f"{s['name']}{price}", callback_data=f"svc:{s['id']}")
     b.button(text="❌ Отмена", callback_data="cancel")
     b.adjust(1)
@@ -96,23 +97,36 @@ def quote_kb(oid: int) -> InlineKeyboardMarkup:
 
 # ---------- админ ----------
 
-def admin_new_order_kb(niche: Niche, oid: int) -> InlineKeyboardMarkup:
-    step = niche.next_after_new
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=step.button or step.text, callback_data=f"adm:{step.code}:{oid}"),
-         InlineKeyboardButton(text="❌ Отменить", callback_data=f"adm:{CANCELLED.code}:{oid}")],
-        [InlineKeyboardButton(text="🔧 Все статусы", callback_data=f"adm:menu:{oid}")],
-    ])
+def admin_card_kb(o) -> InlineKeyboardMarkup:
+    """Компактная карточка: следующий шаг, остальные статусы по кнопке и отмена."""
+    niche = o.preset
+    rows = []
+    step = niche.next_status(o.status)
+    if step:
+        rows.append([InlineKeyboardButton(text=f"▶ {o.status_label(step.code)}",
+                                          callback_data=f"adm:{step.code}:{o.id}")])
+    bottom = [InlineKeyboardButton(text="Ещё статусы", callback_data=f"adm:menu:{o.id}")]
+    if o.status not in (niche.final.code, CANCELLED.code):
+        bottom.append(InlineKeyboardButton(text="❌ Отменить", callback_data=f"adm:{CANCELLED.code}:{o.id}"))
+    rows.append(bottom)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def admin_status_kb(niche: Niche, oid: int, current: str | None = None) -> InlineKeyboardMarkup:
-    """Все статусы ниши. Если передан current, текущий статус отмечен стрелкой."""
+def admin_status_kb(o) -> InlineKeyboardMarkup:
+    """Все статусы заявки, подписи совпадают с тем, что видит клиент. Текущий отмечен галочкой."""
     b = InlineKeyboardBuilder()
-    for status in niche.all_statuses:
-        mark = "▶️ " if status.code == current else ""
-        b.button(text=f"{mark}{status.text}", callback_data=f"adm:{status.code}:{oid}")
+    for status in o.preset.all_statuses:
+        mark = "✓ " if status.code == o.status else ""
+        b.button(text=f"{mark}{o.status_label(status.code)}", callback_data=f"adm:{status.code}:{o.id}")
+    b.button(text="⬅️ Свернуть", callback_data=f"adm:less:{o.id}")
     b.adjust(1)
     return b.as_markup()
+
+
+def quote_cancel_kb(oid: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"qcancel:{oid}")],
+    ])
 
 
 # ---------- демо ----------

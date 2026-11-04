@@ -269,12 +269,12 @@ async def test_demo_visitor_sees_both_sides_of_the_chat(tmp_path, monkeypatch):
 
     await h.say("Выведете кофе?", ANNA)
     card = from_client(h, ANNA)
-    assert "Так мастер видит сообщение клиента" in card.text and "Заявка №1" in card.text
+    assert "Так приёмщик видит сообщение клиента" in card.text and "Заявка №1" in card.text
     # Вопрос посетителя демо не уходит настоящему администратору
     assert len(h.texts_to(ADMIN)) == admin_before
 
     await h.dp.feed_update(h.bot, reply("Да, выведем", ANNA, card.message_id))
-    assert h.last_to(ANNA).text == "👤 <i>Клиент получил:</i>\n\n💬 <b>Мастер:</b> Да, выведем"
+    assert h.last_to(ANNA).text == "👤 <i>Клиент получил:</i>\n\n💬 <b>Приёмщик:</b> Да, выведем"
 
 
 @pytest.mark.asyncio

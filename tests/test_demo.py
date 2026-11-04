@@ -88,8 +88,8 @@ async def test_visitor_receives_master_card_of_own_order(tmp_path, monkeypatch):
 
     card = h.last_to(ANNA)
     assert "Новая заявка №1" in card.text
-    assert "👆 Так заявку видит мастер. Нажмите статус — и посмотрите, что получит клиент." in card.text
-    assert card.callbacks() == [f"adm:{s.code}:1" for s in NICHES["drycleaning"].all_statuses]
+    assert "👆 Так заявку видит приёмщик. Нажмите статус — и посмотрите, что получит клиент." in card.text
+    assert card.callbacks() == ["adm:assessment:1", "adm:menu:1", "adm:cancelled:1"]
     # Заявки посетителей не засоряют личку администратора
     assert len(h.texts_to(ADMIN)) == admin_messages
 
@@ -213,9 +213,9 @@ async def test_autoservice_quote_buttons_in_demo(tmp_path, monkeypatch):
     await h.press("adm:diagnostics:1", ANNA)
     await h.press("adm:approval:1", ANNA)
     card = h.last_to(ANNA)
-    assert "/note 1" in card.text and card.callbacks()
+    assert "Введите сумму и что делаем" in card.text and card.callbacks() == ["qcancel:1"]
 
-    await h.say("/note 1 8 500 ₽, замена колодок", ANNA)
+    await h.say("8 500 ₽, замена колодок", ANNA)
     sent = h.bot.sent
     offer = sent[-2]
     assert offer.buttons() == [("✅ Согласен", "quote:yes:1"), ("📞 Перезвоните мне", "quote:call:1")]
@@ -224,7 +224,7 @@ async def test_autoservice_quote_buttons_in_demo(tmp_path, monkeypatch):
 
     await h.press("quote:yes:1", ANNA)
     answer = h.last_to(ANNA)
-    assert "Клиент согласен" in answer.text and "Так мастеру приходит ответ" in answer.text
+    assert "Клиент согласен" in answer.text and "Так мастеру-приёмщику приходит ответ" in answer.text
     assert "adm:waiting_parts:1" in answer.callbacks()
 
     for code in ("waiting_parts", "in_progress", "ready", "done"):

@@ -127,7 +127,8 @@ async def my_status(m: Message, db: Database, settings: Settings, niche: Niche):
 async def cancel(event: Message | CallbackQuery, state: FSMContext, niche: Niche):
     await state.clear()
     if isinstance(event, CallbackQuery):
-        await event.message.edit_text("Запись отменена. Вернуться — /menu")
+        await event.message.edit_reply_markup(reply_markup=None)
+        await event.message.answer("Запись отменена.", reply_markup=kb.main_menu(niche))
         await event.answer()
     else:
         await event.answer("Запись отменена.", reply_markup=kb.main_menu(niche))
@@ -276,12 +277,13 @@ async def enter_address(m: Message, state: FSMContext, niche: Niche):
 async def _show_summary(m: Message, state: FSMContext, niche: Niche):
     d = await state.get_data()
     await state.set_state(Booking.confirm)
-    await m.answer("Секунду…", reply_markup=ReplyKeyboardRemove())
+    # Одно сообщение не может и убрать нижнюю клавиатуру, и показать кнопки подтверждения
     await m.answer(
         texts.order_summary(niche, d["name"], d["phone"], d["service_name"], d["device"], d["problem"],
                             datetime.fromisoformat(d["slot"]), d["address"]),
-        reply_markup=kb.confirm_kb(),
+        reply_markup=ReplyKeyboardRemove(),
     )
+    await m.answer("Всё верно?", reply_markup=kb.confirm_kb())
 
 
 @router.callback_query(Booking.confirm, F.data == "confirm")
@@ -309,8 +311,8 @@ async def confirm(c: CallbackQuery, state: FSMContext, db: Database, settings: S
     )
     await state.clear()
     order = await db.order(oid)
-    await c.message.edit_text(texts.order_created(order, settings))
-    await c.message.answer("Главное меню:", reply_markup=kb.main_menu(niche))
+    await c.message.edit_reply_markup(reply_markup=None)
+    await c.message.answer(texts.order_created(order, settings), reply_markup=kb.main_menu(niche))
     await c.answer()
     if order.demo:
         await db.demo_event(c.from_user.id, niche.key, DEMO_EVENT_BOOKED, now)
@@ -341,7 +343,7 @@ async def quote_answer(c: CallbackQuery, db: Database, notifier: Notifier):
     await db.set_quote_answer(o.id, answer)
     o = await db.order(o.id)
     await c.message.edit_reply_markup(reply_markup=None)
-    await c.message.answer(texts.quote_client_ack(answer))
+    await c.message.answer(texts.quote_client_ack(answer, o.preset))
     await c.answer()
     await notifier.quote_answered(o, answer)
 
@@ -360,13 +362,13 @@ async def message_to_master(m: Message, db: Database, settings: Settings, notifi
         await m.answer(texts.admin_relay_hint())
         return
     if not await db.relay_allow(m.from_user.id, settings.now(), RELAY_LIMIT, RELAY_WINDOW):
-        await m.answer(texts.relay_too_many())
+        await m.answer(texts.relay_too_many(niche))
         return
     orders = await db.user_orders(m.from_user.id, niche=niche.key if settings.demo_mode else None)
     closed = {niche.final.code, CANCELLED.code}
     order = next((o for o in orders if o.status not in closed), orders[0] if orders else None)
-    await m.answer(texts.relay_ack())
-    sent = await notifier.client_message(m, order, settings.demo_mode)
+    await m.answer(texts.relay_ack(niche))
+    sent = await notifier.client_message(m, order, settings.demo_mode, niche)
     if not sent:
         await m.answer(texts.relay_failed())
         return

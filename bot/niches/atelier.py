@@ -10,6 +10,7 @@ PRESET = Niche(
     demo_street="Мясницкая ул., 24",
     demo_phone="+7 (495) 000-00-03",
     client_of="ателье",
+    staff_name="приёмщик",
     services=(
         ServicePreset("Подгонка по фигуре", "От 1 500 ₽, 2–5 дней", 1500),
         ServicePreset("Укоротить брюки", "От 500 ₽, 1–2 дня", 500),

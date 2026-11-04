@@ -10,6 +10,7 @@ PRESET = Niche(
     demo_street="Софийская ул., 14",
     demo_phone="+7 (812) 000-00-04",
     client_of="автосервиса",
+    staff_name="мастер-приёмщик",
     services=(
         ServicePreset("Диагностика", "От 1 000 ₽, 30–60 минут", 1000),
         ServicePreset("Техническое обслуживание", "От 5 000 ₽, 2–4 часа", 5000),
@@ -28,7 +29,7 @@ PRESET = Niche(
         Status("done", "🏁 Выдано"),
     ),
     slot_minutes=60,
-    menu_book="🚗 Записаться на диагностику",
+    menu_book="🚗 Записаться",
     menu_status="🔎 Статус моего автомобиля",
     book_prompt="Что нужно сделать?",
     welcome_points=(
@@ -42,8 +43,8 @@ PRESET = Niche(
     object_emoji="🚘",
     object_prompt="Марка, модель, госномер (например, «Kia Rio, А123ВС 178»):",
     object_missing="автомобиль не указан",
-    problem_label="Что беспокоит",
-    problem_prompt="Что беспокоит? Например: «стук спереди справа на неровностях»:",
+    problem_label="Что случилось",
+    problem_prompt="Что случилось? Например: «стук спереди справа на неровностях»:",
     visit_label="Визит",
     reminder_wait="ждём вас",
 )

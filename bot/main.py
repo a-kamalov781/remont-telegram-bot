@@ -18,6 +18,7 @@ from bot.db import Database
 from bot.handlers import admin, client, demo
 from bot.niches import get_niche
 from bot.services.notify import Notifier
+from bot.services.profile import sync_profile
 from bot.services.sheets import SheetsExporter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -81,6 +82,7 @@ async def main() -> None:
     dp.include_router(client.router)
 
     await bot.set_my_commands(bot_commands(settings))
+    await sync_profile(bot, settings)
 
     scheduler = AsyncIOScheduler(timezone=settings.tz)
     scheduler.add_job(send_reminders, "interval", minutes=5,

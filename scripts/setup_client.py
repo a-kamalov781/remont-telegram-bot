@@ -1,4 +1,5 @@
-"""Настройка бота под клиента: печатает готовый .env и шаги для @BotFather. Ничего не записывает и никуда не отправляет.
+"""Настройка бота под клиента: печатает готовый .env и что осталось сделать у @BotFather.
+Ничего не записывает и никуда не отправляет.
 
 Пример:
   python scripts/setup_client.py --niche drycleaning --name "«Химчистка на Литейном»" \\
@@ -14,11 +15,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bot.niches import NICHES, Niche  # noqa: E402
+from bot.services.profile import (  # noqa: E402
+    DESCRIPTION_LIMIT,
+    NAME_LIMIT,
+    SHORT_DESCRIPTION_LIMIT,
+    Profile,
+    business_profile,
+)
 
-# Лимиты Telegram на профиль бота
-NAME_LIMIT = 64
-DESCRIPTION_LIMIT = 512
-ABOUT_LIMIT = 120
+ABOUT_LIMIT = SHORT_DESCRIPTION_LIMIT
 
 
 @dataclass(frozen=True)
@@ -32,18 +37,14 @@ class Client:
     admin_ids: str = ""
 
     @property
-    def plain_name(self) -> str:
-        return self.name.strip("«»\"' ")
-
-    @property
-    def hours(self) -> str:
-        return f"{self.start}–{self.end}"
+    def profile(self) -> Profile:
+        return business_profile(self.name, self.address, self.phone, self.start, self.end)
 
 
 def env_block(c: Client) -> str:
     return "\n".join([
         "BOT_TOKEN=<токен от BotFather>",
-        f"ADMIN_IDS={c.admin_ids or '<Telegram ID мастера, узнать у @userinfobot>'}",
+        f"ADMIN_IDS={c.admin_ids or '<Telegram ID сотрудника, узнать у @userinfobot>'}",
         f"NICHE={c.niche.key}",
         "DEMO_MODE=false",
         f"BUSINESS_NAME={c.name}",
@@ -54,46 +55,40 @@ def env_block(c: Client) -> str:
     ])
 
 
-def setname_text(c: Client) -> str:
-    return c.plain_name
-
-
-def setdescription_text(c: Client) -> str:
-    lines = [c.plain_name, f"📍 {c.address}", f"🕒 {c.hours}"]
-    if c.phone:
-        lines.append(f"📞 {c.phone}")
-    lines += ["", "Запись, статус заказа и вопрос мастеру прямо в этом чате. Нажмите «Старт»."]
-    return "\n".join(lines)
-
-
 def setabouttext_text(c: Client) -> str:
-    return f"{c.address}, {c.hours}"
+    return c.profile.short_description
 
 
 def problems(c: Client) -> list[str]:
+    p = c.profile
     out = []
-    for label, text, limit in (("/setname", setname_text(c), NAME_LIMIT),
-                               ("/setdescription", setdescription_text(c), DESCRIPTION_LIMIT),
-                               ("/setabouttext", setabouttext_text(c), ABOUT_LIMIT)):
+    for label, text, limit in (("/setname", p.name, NAME_LIMIT),
+                               ("/setdescription", p.description, DESCRIPTION_LIMIT),
+                               ("/setabouttext", p.short_description, ABOUT_LIMIT)):
         if len(text) > limit:
-            out.append(f"{label}: {len(text)} символов при лимите {limit}, сократите текст")
+            out.append(f"{label}: {len(text)} символов при лимите {limit}, бот обрежет текст. Сократите данные в .env")
     return out
 
 
 def checklist(c: Client) -> str:
+    p = c.profile
     return "\n".join([
-        "В @BotFather выберите бота и отправьте команды, чтобы в профиле сразу было видно, чей он:",
+        "Создайте бота у @BotFather и возьмите токен.",
         "",
-        "1. /setname",
-        setname_text(c),
+        "/setname, /setdescription и /setabouttext вручную не нужны: при каждом запуске бот заполнит профиль",
+        "сам из .env, и ручные правки этих полей будут заменены. Вот что он запишет:",
         "",
-        "2. /setdescription (адрес и часы, клиент видит это до нажатия «Старт»)",
-        setdescription_text(c),
+        "Название:",
+        p.name,
         "",
-        "3. /setabouttext",
-        setabouttext_text(c),
+        "Описание, клиент видит его до нажатия «Старт»:",
+        p.description,
         "",
-        "4. /setuserpic: отправьте логотип клиента, лучше квадратный",
+        "Короткое описание:",
+        p.short_description,
+        "",
+        "Вручную остаётся один шаг у @BotFather:",
+        "/setuserpic: отправьте логотип клиента, лучше квадратный",
     ])
 
 

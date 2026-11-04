@@ -127,15 +127,19 @@ class Order:
 
     @property
     def status_text(self) -> str:
-        if self.status == "ready" and self.price and self.preset.has_price:
+        return self.status_label(self.status)
+
+    def status_label(self, code: str) -> str:
+        """Текст статуса у клиента с учётом этой заявки. Кнопки мастера показывают ровно его же."""
+        if code == "ready" and self.price and self.preset.has_price:
             return f"✅ Готово — к оплате {format_rub(self.price)}"
-        return self.preset.status_text(self.status)
+        return self.preset.status_text(code)
 
     @property
     def awaits_quote_answer(self) -> bool:
         """Мастер указал сумму, клиент ещё не ответил."""
         status = self.preset.status(self.status)
-        return bool(status and status.approval and self.admin_note and not self.quote_answer)
+        return bool(status and status.approval and self.price and not self.quote_answer)
 
 
 def _scope(user_id: int | None) -> tuple[str, tuple]:
@@ -277,6 +281,13 @@ class Database:
     async def set_quote_answer(self, oid: int, answer: str) -> None:
         async with aiosqlite.connect(self.path) as db:
             await db.execute("UPDATE orders SET quote_answer=? WHERE id=?", (answer, oid))
+            await db.commit()
+
+    async def set_quote(self, oid: int, status: str, price: int, note: str) -> None:
+        """Новая сумма — новый вопрос клиенту, прежний ответ больше не действует."""
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("UPDATE orders SET status=?, price=?, admin_note=?, quote_answer='' WHERE id=?",
+                             (status, price, note, oid))
             await db.commit()
 
     async def set_price(self, oid: int, price: int) -> None:
