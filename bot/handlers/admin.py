@@ -177,12 +177,10 @@ async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier, setti
     if action == o.status:
         await c.answer(f"Статус уже такой: {o.status_text}")
         return
+    await db.set_status(oid, action)
     if status.approval:
         # Новое согласование начинается с чистого листа: сумма придёт через /note
-        await db.set_status(oid, action, note="")
         await db.set_quote_answer(oid, "")
-    else:
-        await db.set_status(oid, action)
     o = await db.order(oid)
     if o.demo:
         # Старая карточка гаснет, новая придёт внизу чата вместе с сообщением клиента

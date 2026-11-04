@@ -245,9 +245,13 @@ class Database:
             return Order.from_row(r) if r else None
 
     async def set_status(self, oid: int, status: str, note: str | None = None) -> None:
+        """Комментарий мастера живёт в одном статусе: при смене статуса без нового текста он очищается."""
         async with aiosqlite.connect(self.path) as db:
             if note is None:
-                await db.execute("UPDATE orders SET status=? WHERE id=?", (status, oid))
+                await db.execute(
+                    "UPDATE orders SET admin_note=CASE WHEN status=? THEN admin_note ELSE '' END, status=? WHERE id=?",
+                    (status, status, oid),
+                )
             else:
                 await db.execute("UPDATE orders SET status=?, admin_note=? WHERE id=?", (status, note, oid))
             await db.commit()
@@ -259,8 +263,11 @@ class Database:
 
     async def set_slot(self, oid: int, slot: datetime, status: str = "confirmed") -> None:
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("UPDATE orders SET slot=?, status=?, reminded=0 WHERE id=?",
-                             (slot.isoformat(), status, oid))
+            await db.execute(
+                "UPDATE orders SET slot=?, admin_note=CASE WHEN status=? THEN admin_note ELSE '' END, "
+                "status=?, reminded=0 WHERE id=?",
+                (slot.isoformat(), status, status, oid),
+            )
             await db.commit()
 
     async def orders_for_day(self, day_iso: str) -> list[Order]:
