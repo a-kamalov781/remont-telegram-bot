@@ -127,9 +127,9 @@ async def my_status(m: Message, db: Database, settings: Settings, niche: Niche):
 async def cancel(event: Message | CallbackQuery, state: FSMContext, niche: Niche):
     await state.clear()
     if isinstance(event, CallbackQuery):
+        await event.answer()
         await event.message.edit_reply_markup(reply_markup=None)
         await event.message.answer("Запись отменена.", reply_markup=kb.main_menu(niche))
-        await event.answer()
     else:
         await event.answer("Запись отменена.", reply_markup=kb.main_menu(niche))
 
@@ -148,8 +148,8 @@ async def book_start(m: Message, state: FSMContext, db: Database, niche: Niche):
 async def book_from_card(c: CallbackQuery, state: FSMContext, db: Database, niche: Niche):
     await state.clear()
     await state.set_state(Booking.service)
-    await c.message.answer(niche.book_prompt, reply_markup=kb.services_kb(await db.services(niche.key)))
     await c.answer()
+    await c.message.answer(niche.book_prompt, reply_markup=kb.services_kb(await db.services(niche.key)))
 
 
 @router.callback_query(Booking.service, F.data.startswith("svc:"))
@@ -163,15 +163,15 @@ async def pick_service(c: CallbackQuery, state: FSMContext, db: Database, settin
     await state.set_state(Booking.date)
     dates = working_dates(_cfg(settings, niche), settings.now().date())
     header = texts.booking_header(settings, niche, svc["name"])
-    await c.message.edit_text(f"{header}\n\nВыберите день:", reply_markup=kb.dates_kb(dates))
     await c.answer()
+    await c.message.edit_text(f"{header}\n\nВыберите день:", reply_markup=kb.dates_kb(dates))
 
 
 @router.callback_query(F.data == "back:services")
 async def back_services(c: CallbackQuery, state: FSMContext, db: Database, niche: Niche):
     await state.set_state(Booking.service)
-    await c.message.edit_text(niche.book_prompt, reply_markup=kb.services_kb(await db.services(niche.key)))
     await c.answer()
+    await c.message.edit_text(niche.book_prompt, reply_markup=kb.services_kb(await db.services(niche.key)))
 
 
 @router.callback_query(Booking.date, F.data.startswith("date:"))
@@ -187,8 +187,8 @@ async def pick_date(c: CallbackQuery, state: FSMContext, db: Database, settings:
     await state.set_state(Booking.slot)
     service = (await state.get_data()).get("service_name", "")
     header = texts.booking_header(settings, niche, service, d)
-    await c.message.edit_text(f"{header}\n\nВыберите время:", reply_markup=kb.slots_kb(slots))
     await c.answer()
+    await c.message.edit_text(f"{header}\n\nВыберите время:", reply_markup=kb.slots_kb(slots))
 
 
 @router.callback_query(F.data == "back:dates")
@@ -197,8 +197,8 @@ async def back_dates(c: CallbackQuery, state: FSMContext, settings: Settings, ni
     dates = working_dates(_cfg(settings, niche), settings.now().date())
     service = (await state.get_data()).get("service_name", "")
     header = texts.booking_header(settings, niche, service)
-    await c.message.edit_text(f"{header}\n\nВыберите день:", reply_markup=kb.dates_kb(dates))
     await c.answer()
+    await c.message.edit_text(f"{header}\n\nВыберите день:", reply_markup=kb.dates_kb(dates))
 
 
 @router.callback_query(Booking.slot, F.data.startswith("slot:"))
@@ -209,8 +209,8 @@ async def pick_slot(c: CallbackQuery, state: FSMContext, db: Database, settings:
         return
     await state.update_data(slot=slot.isoformat())
     await state.set_state(Booking.name)
-    await c.message.edit_text(f"🕒 {fmt_dt(slot)}\n\nКак к вам обращаться?")
     await c.answer()
+    await c.message.edit_text(f"🕒 {fmt_dt(slot)}\n\nКак к вам обращаться?")
 
 
 @router.message(Booking.name, F.text)
@@ -294,11 +294,11 @@ async def confirm(c: CallbackQuery, state: FSMContext, db: Database, settings: S
     scope = _scope(settings, c.from_user.id)
     if not await db.slot_is_free(slot, scope):
         await state.set_state(Booking.date)
+        await c.answer()
         await c.message.edit_text(
             "Это время только что заняли 😔 Выберите другое:",
             reply_markup=kb.dates_kb(working_dates(_cfg(settings, niche), settings.now().date())),
         )
-        await c.answer()
         return
     if await db.has_active_order_at(d["phone"], slot, scope):
         await c.answer("У вас уже есть запись на это время.", show_alert=True)
@@ -311,9 +311,9 @@ async def confirm(c: CallbackQuery, state: FSMContext, db: Database, settings: S
     )
     await state.clear()
     order = await db.order(oid)
+    await c.answer()
     await c.message.edit_reply_markup(reply_markup=None)
     await c.message.answer(texts.order_created(order, settings), reply_markup=kb.main_menu(niche))
-    await c.answer()
     if order.demo:
         await db.demo_event(c.from_user.id, niche.key, DEMO_EVENT_BOOKED, now)
     await notifier.new_order(order)
@@ -337,14 +337,14 @@ async def quote_answer(c: CallbackQuery, db: Database, notifier: Notifier):
         await c.answer("Заявка не найдена", show_alert=True)
         return
     if not o.awaits_quote_answer:
-        await c.message.edit_reply_markup(reply_markup=None)
         await c.answer("Этот вопрос уже закрыт")
+        await c.message.edit_reply_markup(reply_markup=None)
         return
+    await c.answer()
     await db.set_quote_answer(o.id, answer)
     o = await db.order(o.id)
     await c.message.edit_reply_markup(reply_markup=None)
     await c.message.answer(texts.quote_client_ack(answer, o.preset))
-    await c.answer()
     await notifier.quote_answered(o, answer)
 
 

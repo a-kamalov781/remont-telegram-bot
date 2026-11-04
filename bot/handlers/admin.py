@@ -71,13 +71,16 @@ async def open_orders(m: Message, db: Database):
 
 
 @router.message(Command("order"))
-async def order_card(m: Message, command: CommandObject, db: Database):
+async def order_card(m: Message, command: CommandObject, db: Database, notifier: Notifier):
     if not command.args or not command.args.strip().isdigit():
         await m.answer("Формат: /order 12")
         return
     o = await db.order(int(command.args))
     if not o:
         await m.answer("Заявка не найдена.")
+        return
+    if o.demo and m.chat.id == o.user_id:
+        await notifier.show_card(o, texts.admin_order(o), kb.admin_card_kb(o), force_new=True)
         return
     await m.answer(texts.admin_order(o), reply_markup=kb.admin_card_kb(o))
 
@@ -96,7 +99,7 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
     # Запасной путь: нажали «Согласование стоимости», а сумму отправили командой
     code = quote.approval_code(o) if await quote.pending_order(state) == oid else o.status
     if await quote.pending_order(state) == oid:
-        await state.clear()
+        await quote.close_input(state, notifier, m.chat.id)
     status = o.preset.status(code)
     amount = None
     if status and status.approval:
@@ -114,7 +117,7 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
 
 
 @router.message(Command("price"))
-async def price(m: Message, command: CommandObject, db: Database, state: FSMContext):
+async def price(m: Message, command: CommandObject, db: Database, state: FSMContext, notifier: Notifier):
     parts = (command.args or "").split(maxsplit=1)
     amount = parse_amount(parts[1]) if len(parts) == 2 and parts[0].isdigit() else None
     if not amount:
@@ -130,7 +133,7 @@ async def price(m: Message, command: CommandObject, db: Database, state: FSMCont
         return
     await db.set_price(oid, amount)
     if await quote.pending_order(state) == oid:
-        await state.clear()
+        await quote.close_input(state, notifier, m.chat.id)
     await m.answer(texts.price_saved(await db.order(oid)))
 
 
@@ -199,6 +202,9 @@ router.callback_query.register(quote.cancel_input, F.data.startswith("qcancel:")
 
 @router.callback_query(F.data.startswith("adm:"))
 async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier, settings: Settings, state: FSMContext):
+    if await quote.pending_order(state):
+        await c.answer(texts.QUOTE_WAIT_FIRST)
+        return
     _, action, oid_s = c.data.split(":")
     oid = int(oid_s)
     o = await db.order(oid)
@@ -207,14 +213,17 @@ async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier, setti
         return
     niche = o.preset
     if action in ("menu", "less"):
+        await c.answer()
         markup = kb.admin_status_kb(o) if action == "menu" else kb.admin_card_kb(o)
         await c.message.edit_reply_markup(reply_markup=markup)
-        await c.answer()
         return
     status = niche.status(action)
     if status is None:
         await c.answer("Неизвестный статус", show_alert=True)
         return
+    own_demo_card = o.demo and c.message.chat.id == o.user_id
+    if own_demo_card:
+        await notifier.adopt_card(o, c.message.message_id)
     if status.approval:
         # Статус сменится и клиент узнает только после ввода суммы. Повторное нажатие позволяет исправить сумму
         await quote.ask_amount(c, state, o)
@@ -222,15 +231,14 @@ async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier, setti
     if action == o.status:
         await c.answer(f"Статус уже такой: {o.status_text}")
         return
-    await quote.stop_waiting(state)
     await db.set_status(oid, action)
     o = await db.order(oid)
+    await c.answer(f"Клиенту отправлено: {o.status_text}")
     if o.demo:
-        # Старая карточка гаснет, новая придёт внизу чата вместе с сообщением клиента
-        await c.message.edit_text(texts.admin_order(o), reply_markup=None)
+        if not own_demo_card:
+            await c.message.edit_text(texts.admin_order(o), reply_markup=None)
         if action == niche.final.code:
             await db.demo_event(o.user_id, niche.key, DEMO_EVENT_FINISHED, settings.now())
     await notifier.status_changed(o)
     if not o.demo:
         await c.message.edit_text(texts.admin_order(o), reply_markup=kb.admin_card_kb(o))
-    await c.answer(f"Клиенту отправлено: {o.status_text}")

@@ -134,7 +134,7 @@ async def test_demo_explains_the_role_after_choosing_niche(tmp_path, monkeypatch
     sent = h.texts_to(ANNA)
     assert any(
         "Представьте, что вы клиент химчистки «Белый Лист» (Лиговский пр., 50). "
-        "Сейчас вы пройдёте путь клиента, а потом увидите, как заявку получает приёмщик" in t
+        "Сейчас вы пройдёте путь клиента, а потом увидите, как заявку получаете вы — владелец (или ваш приёмщик)" in t
         for t in sent
     )
     card = h.last_to(ANNA)

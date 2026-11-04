@@ -202,8 +202,8 @@ async def test_demo_quote_saves_price_and_says_so(tmp_path, monkeypatch):
     assert "Стоимость 8 500 ₽ записана" in h.last_to(CLIENT).text
     await h.press("quote:yes:1", CLIENT)
     await h.press("adm:ready:1", CLIENT)
-    sent = h.texts_to(CLIENT)
-    assert "к оплате 8 500 ₽" in sent[-2] and "к оплате 8 500 ₽" in sent[-1]
+    assert "к оплате 8 500 ₽" in h.last_to(CLIENT).text  # что получил клиент
+    assert "к оплате 8 500 ₽" in h.card(CLIENT).text
 
 
 def test_sheet_columns():

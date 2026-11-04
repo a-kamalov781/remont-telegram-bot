@@ -61,18 +61,18 @@ async def pick_niche(c: CallbackQuery, state: FSMContext, db: Database, settings
     if key not in NICHES:
         await c.answer("Такой ниши нет", show_alert=True)
         return
+    await c.answer()
     await state.clear()
     await db.set_demo_niche(c.from_user.id, key, settings.now())
     niche = NICHES[key]
     await c.message.edit_text(texts.demo_intro(niche))
     await client.show_menu(c.message, settings, niche)
-    await c.answer()
 
 
 # ---------- посетитель как сотрудник своей заявки ----------
 
 @router.message(Command("order"))
-async def order_card(m: Message, command: CommandObject, db: Database):
+async def order_card(m: Message, command: CommandObject, db: Database, notifier: Notifier):
     args = (command.args or "").strip()
     if not args.isdigit():
         await m.answer("Формат: /order 12")
@@ -81,7 +81,7 @@ async def order_card(m: Message, command: CommandObject, db: Database):
     if not o:
         await m.answer("Заявка не найдена.")
         return
-    await m.answer(texts.admin_order(o), reply_markup=kb.admin_card_kb(o))
+    await notifier.show_card(o, texts.admin_order(o), kb.admin_card_kb(o), force_new=True)
 
 
 @router.message(Command("note"))
@@ -94,12 +94,12 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
 
 
 @router.message(Command("price"))
-async def price(m: Message, command: CommandObject, db: Database, state: FSMContext):
+async def price(m: Message, command: CommandObject, db: Database, state: FSMContext, notifier: Notifier):
     first = (command.args or "").split(maxsplit=1)[:1]
     if first and first[0].isdigit() and not await _own_order(db, m.from_user.id, int(first[0])):
         await m.answer("Заявка не найдена.")
         return
-    await admin.price(m, command, db, state)
+    await admin.price(m, command, db, state, notifier)
 
 
 router.message.register(relay.answer_client, relay.RelayReply())

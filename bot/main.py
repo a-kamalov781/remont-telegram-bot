@@ -16,9 +16,11 @@ from bot import texts
 from bot.config import Settings, get_settings
 from bot.db import Database
 from bot.handlers import admin, client, demo
+from bot.middlewares import install as install_middlewares
 from bot.niches import get_niche
 from bot.services.notify import Notifier
 from bot.services.profile import sync_profile
+from bot.services.retry import RetryRequests
 from bot.services.sheets import SheetsExporter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -69,6 +71,7 @@ async def main() -> None:
     await db.init()
 
     bot = Bot(settings.bot_token, default=bot_defaults())
+    bot.session.middleware(RetryRequests())
     dp = Dispatcher(storage=MemoryStorage())
     sheets = SheetsExporter(settings.google_credentials_file, settings.google_sheet_id, niche)
     notifier = Notifier(bot, settings, sheets)
@@ -77,6 +80,7 @@ async def main() -> None:
     dp["db"] = db
     dp["notifier"] = notifier
 
+    install_middlewares(dp)
     dp.include_router(admin.router)
     dp.include_router(demo.router)
     dp.include_router(client.router)

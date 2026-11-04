@@ -136,10 +136,10 @@ async def test_full_scenario_ends_with_sales_message(tmp_path, monkeypatch):
 
     for code in ("assessment", "cleaning", "ready"):
         await h.press(f"adm:{code}:1", ANNA)
-        sent = h.texts_to(ANNA)
-        assert NICHES["drycleaning"].status_text(code) in sent[-2]  # что получил клиент
-        assert sent[-2].startswith("👤 <i>Клиент получил:</i>")
-        assert h.last_to(ANNA).callbacks()  # следующая карточка внизу чата
+        last = h.last_to(ANNA).text
+        assert NICHES["drycleaning"].status_text(code) in last  # что получил клиент
+        assert last.startswith("👤 <i>Клиент получил:</i>")
+        assert h.card(ANNA).callbacks()  # карточка обновилась на месте
 
     await h.press("adm:done:1", ANNA)
     final = h.last_to(ANNA)
@@ -225,7 +225,7 @@ async def test_autoservice_quote_buttons_in_demo(tmp_path, monkeypatch):
     await h.press("quote:yes:1", ANNA)
     answer = h.last_to(ANNA)
     assert "Клиент согласен" in answer.text and "Так мастеру-приёмщику приходит ответ" in answer.text
-    assert "adm:waiting_parts:1" in answer.callbacks()
+    assert "adm:waiting_parts:1" in h.card(ANNA).callbacks()
 
     for code in ("waiting_parts", "in_progress", "ready", "done"):
         await h.press(f"adm:{code}:1", ANNA)

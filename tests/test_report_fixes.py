@@ -120,7 +120,7 @@ async def test_cancel_button_changes_nothing(tmp_path, monkeypatch):
     o = await h.db.order(1)
     assert (o.status, o.price, o.admin_note) == ("diagnostics", None, "Осмотр 30 минут")
     assert "отменён" in h.last_to(ADMIN).text
-    assert "adm:approval:1" in h.last_to(ADMIN).callbacks()
+    assert "adm:approval:1" in h.card(ADMIN).callbacks()
     assert len(h.texts_to(ANNA)) == client_before
 
     # После отмены текст сотрудника не считается суммой
@@ -133,13 +133,13 @@ async def test_cancel_button_changes_nothing(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_other_status_button_stops_waiting(tmp_path, monkeypatch):
+async def test_other_status_button_does_not_interrupt_waiting(tmp_path, monkeypatch):
     h = await auto(tmp_path, monkeypatch)
     await h.press("adm:approval:1", ADMIN)
     await h.press("adm:diagnostics:1", ADMIN)
     await h.say("8500", ADMIN)
     o = await h.db.order(1)
-    assert (o.status, o.price) == ("diagnostics", None)
+    assert (o.status, o.price) == ("approval", 8500)
 
 
 @pytest.mark.asyncio
@@ -363,7 +363,6 @@ async def test_reception_niches_never_say_master(tmp_path, monkeypatch, key):
     await _full_demo_run(h, ANNA, NICHES[key])
     shown = _everything_shown(h).casefold()
     assert "мастер" not in shown and "приёмщик" in shown
-    assert "владел" not in shown
 
 
 @pytest.mark.asyncio
@@ -492,7 +491,7 @@ async def test_no_filler_messages_and_keyboards_come_with_meaningful_ones(tmp_pa
     summary = next(s for s in h.bot.sent if "Проверьте заявку" in s.text)
     assert isinstance(summary.markup, ReplyKeyboardRemove)
     question = h.bot.sent[h.bot.sent.index(summary) + 1]
-    assert question.callbacks() == ["confirm", "cancel"]
+    assert question.text == "Всё верно?"
 
     created = next(s for s in h.bot.sent if "Вы записаны" in s.text)
     assert isinstance(created.markup, ReplyKeyboardMarkup)
@@ -595,7 +594,7 @@ async def test_next_button_walks_the_chain_in_demo(tmp_path, monkeypatch):
     h = await demo(tmp_path, monkeypatch, key="drycleaning")
     await h.book(ANNA, DRY.menu_book)
     for status in DRY.statuses[1:]:
-        step = h.last_to(ANNA).callbacks()[0]
+        step = h.card(ANNA).callbacks()[0]
         assert step == f"adm:{status.code}:1"
         await h.press(step, ANNA)
     assert "Это демо" in h.last_to(ANNA).text

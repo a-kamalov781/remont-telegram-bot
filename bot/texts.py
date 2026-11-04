@@ -238,8 +238,11 @@ def quote_retry() -> str:
     return "Не нашёл сумму. Напишите, например: 8500 замена колодок"
 
 
-def quote_cancelled(o: Order) -> str:
-    return f"Ввод суммы отменён, клиенту ничего не отправлено.\n\n{admin_order(o)}"
+QUOTE_WAIT_FIRST = "Сначала введите сумму или нажмите Отмена"
+
+
+def quote_cancelled() -> str:
+    return "Ввод суммы отменён, клиенту ничего не отправлено. Кнопки статусов снова работают."
 
 
 def quote_sent(o: Order) -> str:
@@ -364,7 +367,7 @@ def demo_intro(niche: Niche) -> str:
     return (
         f"{niche.emoji} <b>{niche.name}</b>\n\n"
         f"Представьте, что вы клиент {niche.client_of} {niche.demo_name} ({niche.demo_street}). "
-        f"Сейчас вы пройдёте путь клиента, а потом увидите, как заявку получает {niche.staff_name}.\n\n"
+        f"Сейчас вы пройдёте путь клиента, а потом увидите, как заявку получаете вы — владелец (или ваш {niche.staff_name}).\n\n"
         f"Напишите в чат любой вопрос — увидите, как он придёт {niche.staff_dative} и как {niche.staff_name} ответит.\n\n"
         "<i>Название, адрес и телефон в демо вымышленные.</i>\n"
         "Сменить бизнес — /niche"
@@ -388,11 +391,15 @@ def demo_master_card(o: Order) -> str:
     status = o.preset.status(o.status)
     if status and status.approval and not o.price:
         hint = f"Сумма не указана. Нажмите «{_button_name(status.text)}» ещё раз и введите её."
+    elif o.awaits_quote_answer:
+        hint = "Ждём ответ клиента на сумму."
+    elif status and status.approval:
+        hint = "Клиент ответил. Нажмите следующий статус."
     elif o.status == "ready":
         hint = f"Клиент узнал о готовности без звонка. Нажмите «{_button_name(o.preset.final.text)}», чтобы завершить сценарий."
     else:
-        hint = "👆 Это уже у клиента, без звонков и вопросов «ну что там?». Нажмите следующий статус."
-    return f"🛠 <b>Заявка №{o.id} · {_button_name(o.status_text)}</b>\n\n{hint}"
+        hint = "Клиент уже получил это сообщение, без звонков и вопросов «ну что там?». Нажмите следующий статус."
+    return f"{admin_order(o)}\n\n{hint}"
 
 
 def demo_quote_hint(o: Order) -> str:
@@ -413,9 +420,8 @@ def demo_reminder_preview(o: Order, s: Settings) -> str:
             f"{reminder(o, s)}")
 
 
-def demo_quote_card(o: Order, answer: str) -> str:
-    return (f"{quote_master_answer(o, answer)}\n\n"
-            f"👆 Так {o.preset.staff_dative} приходит ответ клиента. Нажмите следующий статус.")
+def demo_quote_answer(o: Order, answer: str) -> str:
+    return f"{quote_master_answer(o, answer)}\n\n👆 Так {o.preset.staff_dative} приходит ответ клиента."
 
 
 def demo_finish(s: Settings) -> str:
