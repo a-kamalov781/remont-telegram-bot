@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS demo_events (
     event TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS relay_messages (
+    chat_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    client_id INTEGER NOT NULL,
+    demo INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (chat_id, message_id)
+);
 """
 
 # Колонки, появившиеся после первой версии. Строки старой базы получают значения по умолчанию,
@@ -322,6 +330,25 @@ class Database:
             cur = await db.execute(f"SELECT status, COUNT(*) FROM orders{where} GROUP BY status", params)
             return {s: n for s, n in await cur.fetchall()}
 
+    # ---------- переписка клиента с мастером ----------
+    async def save_relay(self, sent: Iterable[tuple[int, int]], client_id: int, demo: bool, now: datetime) -> None:
+        """Запоминает, какому клиенту принадлежит сообщение у мастера. Текст переписки не хранится."""
+        async with aiosqlite.connect(self.path) as db:
+            await db.executemany(
+                "INSERT OR REPLACE INTO relay_messages(chat_id, message_id, client_id, demo, created_at) "
+                "VALUES (?,?,?,?,?)",
+                [(chat_id, message_id, client_id, int(demo), now.isoformat()) for chat_id, message_id in sent],
+            )
+            await db.commit()
+
+    async def relay_target(self, chat_id: int, message_id: int) -> tuple[int, bool] | None:
+        """Клиент и признак демо для сообщения в чате мастера. Чужой чат не найдёт чужую запись."""
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute("SELECT client_id, demo FROM relay_messages WHERE chat_id=? AND message_id=?",
+                                   (chat_id, message_id))
+            row = await cur.fetchone()
+            return (row[0], bool(row[1])) if row else None
+
     # ---------- демо ----------
     async def demo_touch(self, user_id: int, now: datetime) -> None:
         async with aiosqlite.connect(self.path) as db:
@@ -355,6 +382,7 @@ class Database:
         """Удаляет только демо-заявки старше cutoff. Аналитика в demo_events остаётся."""
         async with aiosqlite.connect(self.path) as db:
             cur = await db.execute("DELETE FROM orders WHERE demo=1 AND created_at<?", (cutoff.isoformat(),))
+            await db.execute("DELETE FROM relay_messages WHERE demo=1 AND created_at<?", (cutoff.isoformat(),))
             await db.commit()
             return cur.rowcount
 

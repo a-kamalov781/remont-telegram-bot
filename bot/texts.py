@@ -30,7 +30,8 @@ def welcome(s: Settings, niche: Niche) -> str:
         f"Здравствуйте! Это бот <b>{biz_name(s, niche)}</b>.\n\n"
         "Здесь можно:\n"
         f"{points}\n"
-        "• посмотреть цены и адрес.\n\n"
+        "• посмотреть цены и адрес,\n"
+        "• написать мастеру прямо в этот чат.\n\n"
         "Выберите действие в меню ниже."
     )
 
@@ -82,7 +83,8 @@ def order_created(o: Order, s: Settings) -> str:
         f"{niche.visit_wait} <b>{fmt_dt(o.slot)}</b>.\n"
         f"{('📍 ' + _e(place)) if place else ''}\n\n"
         f"{niche.updates_text} "
-        f"Проверить вручную — кнопка «{_button_name(niche.menu_status)}»."
+        f"Проверить вручную — кнопка «{_button_name(niche.menu_status)}».\n"
+        "Есть вопрос — просто напишите сюда, мастер ответит в этом чате."
     )
 
 
@@ -159,6 +161,47 @@ def quote_master_answer(o: Order, answer: str) -> str:
     return f"<b>{verdict}</b> — заявка №{o.id}\n👤 {_e(o.name)} · {o.phone}\n💬 {_e(o.admin_note)}"
 
 
+# ---------- переписка клиента с мастером ----------
+
+REPLY_HINT = "Чтобы ответить клиенту, ответьте на это сообщение (Reply)."
+DEMO_REPLY_HINT = ("👆 Так мастер видит сообщение клиента. Ответьте на него через Reply, "
+                   "и ответ придёт клиенту в этот же чат.")
+
+
+def relay_to_master(user, o: Order | None, body: str | None, demo: bool) -> str:
+    """Сообщение мастеру. Если body пуст, само сообщение клиента идёт следом копией (фото, файл, длинный текст)."""
+    who = _e(user.full_name) + (f" · @{user.username}" if user.username else "")
+    context = f"\n📋 Заявка №{o.id} · {_e(o.name)} · {o.phone} · {o.service_name} — {o.status_text}" if o else ""
+    text = f"\n\n{_e(body)}" if body else ""
+    hint = DEMO_REPLY_HINT if demo else f"<i>{REPLY_HINT}</i>"
+    return f"💬 <b>Сообщение от клиента</b>\n👤 {who}{context}{text}\n\n{hint}"
+
+
+def relay_ack() -> str:
+    return "✉️ Передали мастеру, он ответит в этом чате."
+
+
+def relay_failed() -> str:
+    return "⚠️ Не получилось передать сообщение. Попробуйте позже или позвоните нам."
+
+
+def master_answer(body: str, demo: bool) -> str:
+    text = f"💬 <b>Мастер:</b> {_e(body)}"
+    return f"👤 <i>Клиент получил:</i>\n\n{text}" if demo else text
+
+
+def master_answer_sent() -> str:
+    return "✅ Отправлено клиенту."
+
+
+def master_answer_failed() -> str:
+    return "⚠️ Не удалось доставить: возможно, клиент заблокировал бота. Свяжитесь с ним по телефону."
+
+
+def admin_relay_hint() -> str:
+    return "Это чат с ботом. Чтобы ответить клиенту, нажмите Reply на его сообщении."
+
+
 def admin_help() -> str:
     return (
         "<b>Команды мастера</b>\n"
@@ -170,7 +213,8 @@ def admin_help() -> str:
         "/move 12 2026-11-05 14:00 — перенести визит\n"
         "/block 2026-11-05 14:00 — закрыть слот\n"
         "/unblock 2026-11-05 14:00 — открыть слот\n"
-        "/stats — счётчики по статусам"
+        "/stats — счётчики по статусам\n\n"
+        "Сообщения клиентов приходят сюда. Чтобы ответить, нажмите Reply на сообщении клиента."
     )
 
 
@@ -188,6 +232,7 @@ def demo_intro(niche: Niche) -> str:
         f"{niche.emoji} <b>{niche.name}</b>\n\n"
         "В демо вы одновременно клиент и мастер: запишитесь как клиент, и вам придёт карточка мастера. "
         "Меняйте в ней статусы и смотрите, что получает клиент.\n\n"
+        "Напишите в чат любой вопрос — увидите, как он придёт мастеру и как мастер ответит.\n\n"
         "Сменить бизнес — /niche"
     )
 

@@ -6,8 +6,9 @@ from datetime import date, datetime, time, timedelta
 from itertools import count
 
 from aiogram import Dispatcher
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Chat, InlineKeyboardMarkup, Message, Update, User
+from aiogram.types import CallbackQuery, Chat, InlineKeyboardMarkup, Message, PhotoSize, Update, User
 
 from bot.config import Settings
 from bot.db import Database
@@ -26,6 +27,8 @@ class Sent:
     chat_id: int
     text: str
     markup: object = None
+    message_id: int = 0
+    copied_from: int | None = None
 
     def buttons(self) -> list[tuple[str, str]]:
         if not isinstance(self.markup, InlineKeyboardMarkup):
@@ -41,8 +44,23 @@ class RecordingBot:
     sent: list[Sent] = field(default_factory=list)
     id: int = 1
 
+    blocked: set[int] = field(default_factory=set)
+
+    def _check_reachable(self, chat_id):
+        if chat_id in self.blocked:
+            raise TelegramForbiddenError(method=None, message="bot was blocked by the user")
+
     async def send_message(self, chat_id, text, reply_markup=None, **kw):
-        self.sent.append(Sent(chat_id, text, reply_markup))
+        self._check_reachable(chat_id)
+        sent = Sent(chat_id, text, reply_markup, message_id=next(_ids))
+        self.sent.append(sent)
+        return sent
+
+    async def copy_message(self, chat_id, from_chat_id, message_id, **kw):
+        self._check_reachable(chat_id)
+        sent = Sent(chat_id, "", message_id=next(_ids), copied_from=message_id)
+        self.sent.append(sent)
+        return sent
 
     async def __call__(self, method, *a, **kw):
         return True
@@ -55,6 +73,21 @@ def visitor(uid: int = 100) -> User:
 def message(text: str, user: User) -> Update:
     m = Message(message_id=next(_ids), date=datetime.now(), chat=Chat(id=user.id, type="private"),
                 from_user=user, text=text)
+    return Update(update_id=next(_ids), message=m)
+
+
+def reply(text: str, user: User, to_message_id: int) -> Update:
+    chat = Chat(id=user.id, type="private")
+    replied = Message(message_id=to_message_id, date=datetime.now(), chat=chat, text="исходное")
+    m = Message(message_id=next(_ids), date=datetime.now(), chat=chat, from_user=user, text=text,
+                reply_to_message=replied)
+    return Update(update_id=next(_ids), message=m)
+
+
+def photo(user: User) -> Update:
+    size = PhotoSize(file_id="f", file_unique_id="u", width=1, height=1)
+    m = Message(message_id=next(_ids), date=datetime.now(), chat=Chat(id=user.id, type="private"),
+                from_user=user, photo=[size], caption="вот пятно")
     return Update(update_id=next(_ids), message=m)
 
 

@@ -8,6 +8,7 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
+from aiogram.types import Message
 
 from bot import keyboards as kb
 from bot import texts
@@ -17,6 +18,9 @@ from bot.niches import CANCELLED
 from bot.services.sheets import SheetsExporter
 
 log = logging.getLogger(__name__)
+
+# Лимит Telegram — 4096 символов. Текст длиннее не помещается рядом с подписью и идёт копией
+RELAY_INLINE_LIMIT = 3500
 
 
 class Notifier:
@@ -32,6 +36,39 @@ class Notifier:
         except TelegramAPIError as e:
             log.warning("send to %s failed: %s", chat_id, e)
             return False
+
+    async def _send_get_id(self, chat_id: int, text: str) -> int | None:
+        try:
+            return (await self.bot.send_message(chat_id, text)).message_id
+        except TelegramAPIError as e:
+            log.warning("send to %s failed: %s", chat_id, e)
+            return None
+
+    async def _copy_get_id(self, chat_id: int, m: Message) -> int | None:
+        try:
+            return (await self.bot.copy_message(chat_id, m.chat.id, m.message_id)).message_id
+        except TelegramAPIError as e:
+            log.warning("copy to %s failed: %s", chat_id, e)
+            return None
+
+    async def client_message(self, m: Message, o: Order | None, demo: bool) -> list[tuple[int, int]]:
+        """Передаёт сообщение клиента мастеру. Возвращает (чат, сообщение) всего, на что мастер может ответить."""
+        targets = [m.chat.id] if demo else self.settings.admin_ids
+        inline = m.text if m.text and len(m.text) <= RELAY_INLINE_LIMIT else None
+        header = texts.relay_to_master(m.from_user, o, inline, demo)
+        sent: list[tuple[int, int]] = []
+        for chat_id in targets:
+            ids = [await self._send_get_id(chat_id, header)]
+            if inline is None:
+                ids.append(await self._copy_get_id(chat_id, m))
+            sent += [(chat_id, message_id) for message_id in ids if message_id]
+        return sent
+
+    async def master_reply(self, m: Message, client_id: int, demo: bool) -> bool:
+        """Передаёт клиенту ответ мастера: текст с подписью, остальное (фото, файл, длинный текст) копией."""
+        if m.text and len(m.text) <= RELAY_INLINE_LIMIT:
+            return await self._send(client_id, texts.master_answer(m.text, demo))
+        return await self._copy_get_id(client_id, m) is not None
 
     async def new_order(self, o: Order) -> None:
         if o.demo:

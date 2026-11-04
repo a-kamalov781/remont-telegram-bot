@@ -11,6 +11,7 @@ from bot import keyboards as kb
 from bot import texts
 from bot.config import Settings
 from bot.db import DEMO_EVENT_FINISHED, Database
+from bot.handlers.relay import RelayReply, answer_client
 from bot.niches import get_niche, status_label
 from bot.services.notify import Notifier
 
@@ -155,6 +156,9 @@ async def stats(m: Message, db: Database, settings: Settings):
         await m.answer("Заявок ещё нет.")
         return
     await m.answer("\n".join(f"{status_label(k, niche)}: <b>{v}</b>" for k, v in st.items()))
+
+
+router.message.register(answer_client, RelayReply())
 
 
 @router.callback_query(F.data.startswith("adm:"))

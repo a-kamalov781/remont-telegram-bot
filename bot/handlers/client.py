@@ -5,7 +5,7 @@ import re
 from datetime import date, datetime
 
 from aiogram import BaseMiddleware, F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
@@ -14,7 +14,7 @@ from bot import keyboards as kb
 from bot import texts
 from bot.config import Settings
 from bot.db import DEMO_EVENT_BOOKED, Database
-from bot.niches import BOOK_BUTTONS, STATUS_BUTTONS, Niche, get_niche
+from bot.niches import BOOK_BUTTONS, CANCELLED, STATUS_BUTTONS, Niche, get_niche
 from bot.services.notify import Notifier
 from bot.services.slots import ScheduleConfig, fmt_dt, free_slots, working_dates
 
@@ -326,3 +326,27 @@ async def quote_answer(c: CallbackQuery, db: Database, notifier: Notifier):
     await c.message.answer(texts.quote_client_ack(answer))
     await c.answer()
     await notifier.quote_answered(o, answer)
+
+
+# ---------- свободное сообщение мастеру. Обработчик последний: всё остальное уже разобрано выше ----------
+
+def _is_free_message(m: Message) -> bool:
+    """Неизвестные команды и кнопка «Пропустить» из старой клавиатуры — не сообщение мастеру."""
+    text = m.text or ""
+    return not text.startswith("/") and text != "Пропустить"
+
+
+@router.message(StateFilter(None), F.func(_is_free_message))
+async def message_to_master(m: Message, db: Database, settings: Settings, notifier: Notifier, niche: Niche):
+    if not settings.demo_mode and m.from_user.id in settings.admin_ids:
+        await m.answer(texts.admin_relay_hint())
+        return
+    orders = await db.user_orders(m.from_user.id, niche=niche.key if settings.demo_mode else None)
+    closed = {niche.final.code, CANCELLED.code}
+    order = next((o for o in orders if o.status not in closed), orders[0] if orders else None)
+    await m.answer(texts.relay_ack())
+    sent = await notifier.client_message(m, order, settings.demo_mode)
+    if not sent:
+        await m.answer(texts.relay_failed())
+        return
+    await db.save_relay(sent, m.from_user.id, settings.demo_mode, settings.now())

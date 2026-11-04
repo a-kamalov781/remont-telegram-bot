@@ -14,7 +14,7 @@ from bot import keyboards as kb
 from bot import texts
 from bot.config import Settings
 from bot.db import Database, Order
-from bot.handlers import admin, client
+from bot.handlers import admin, client, relay
 from bot.niches import NICHES, get_niche
 from bot.services.notify import Notifier
 
@@ -91,6 +91,9 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
         await m.answer("Заявка не найдена.")
         return
     await admin.note(m, command, db, notifier)
+
+
+router.message.register(relay.answer_client, relay.RelayReply())
 
 
 @router.callback_query(F.data.startswith("adm:"))
