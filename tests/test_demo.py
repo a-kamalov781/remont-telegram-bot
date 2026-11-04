@@ -223,8 +223,8 @@ async def test_autoservice_quote_buttons_in_demo(tmp_path, monkeypatch):
     assert "Нажмите за клиента" in sent[-1].text
 
     await h.press("quote:yes:1", ANNA)
-    answer = h.last_to(ANNA)
-    assert "Клиент согласен" in answer.text and "Так мастеру-приёмщику приходит ответ" in answer.text
+    answer = next(t for t in reversed(h.texts_to(ANNA)) if "Клиент согласен" in t)
+    assert "Так мастеру-приёмщику приходит ответ" in answer
     assert "adm:waiting_parts:1" in h.card(ANNA).callbacks()
 
     for code in ("waiting_parts", "in_progress", "ready", "done"):

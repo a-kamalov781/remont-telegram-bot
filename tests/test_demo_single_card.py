@@ -172,14 +172,20 @@ async def test_quote_flow_keeps_one_card(tmp_path, monkeypatch):
     assert card.text.startswith("<b>Заявка №1 · Согласование стоимости</b>") and "Ждём ответ клиента" in card.text
     assert "Нажмите за клиента" in h.last_to(ANNA).text
 
+    # Сообщений накопилось больше порога: карточка уходит вниз, под ответ клиента
     await h.press("quote:yes:1", ANNA)
-    assert cards(h) == [card]
-    assert "Клиент ответил" in card.text and "8 500 ₽" in card.text
-    assert "Клиент согласен" in h.last_to(ANNA).text  # ответ клиента отдельным сообщением
+    new = h.card(ANNA)
+    assert card.deleted is True and cards(h) == [new] and new is h.last_to(ANNA)
+    assert "Клиент ответил" in new.text and "8 500 ₽" in new.text
+    assert any("Клиент согласен" in t for t in h.texts_to(ANNA))  # ответ клиента отдельным сообщением
 
     await h.press("adm:waiting_parts:1", ANNA)
-    assert cards(h) == [card]
+    assert cards(h) == [new]
     assert any("Клиент согласен" in t for t in h.texts_to(ANNA))
+
+
+def test_card_threshold_is_four_messages():
+    assert CARD_MAX_AGE == 4
 
 
 @pytest.mark.asyncio

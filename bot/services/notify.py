@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 RELAY_INLINE_LIMIT = 3500
 
 # Демо: карточка ушла выше стольких сообщений — присылаем её заново внизу чата
-CARD_MAX_AGE = 10
+CARD_MAX_AGE = 4
 
 
 @dataclass
