@@ -1,0 +1,46 @@
+"""Ремонт телефонов и ноутбуков."""
+from bot.niches.base import Niche, ServicePreset, Status
+
+PRESET = Niche(
+    key="repair",
+    name="Ремонт телефонов и ноутбуков",
+    emoji="🔧",
+    demo_name="«Ремонт Плюс»",
+    services=(
+        ServicePreset("Диагностика", "Бесплатно при ремонте у нас", 0),
+        ServicePreset("Замена экрана телефона", "От 2 500 ₽, 1–2 часа", 2500),
+        ServicePreset("Замена аккумулятора", "От 1 500 ₽, 30–60 минут", 1500),
+        ServicePreset("Ремонт после воды", "От 2 000 ₽, 1–3 дня", 2000),
+        ServicePreset("Чистка ноутбука + термопаста", "От 1 800 ₽, 1–2 часа", 1800),
+        ServicePreset("Замена разъёма зарядки", "От 1 200 ₽, 1 час", 1200),
+    ),
+    statuses=(
+        Status("new", "🆕 Заявка принята", holds_slot=True),
+        Status("confirmed", "📅 Визит подтверждён", button="✅ Подтвердить", holds_slot=True),
+        Status("received", "🔧 Устройство принято в ремонт"),
+        Status("diagnosed", "🔍 Диагностика завершена"),
+        Status("waiting_parts", "📦 Ожидаем запчасти"),
+        Status("in_progress", "⚙️ В работе"),
+        Status("ready", "✅ Готово — можно забирать"),
+        Status("done", "🏁 Выдано"),
+    ),
+    slot_minutes=60,
+    menu_book="📝 Записаться на ремонт",
+    menu_status="🔎 Статус моего ремонта",
+    book_prompt="С чем помочь?",
+    welcome_points=(
+        "записаться на ремонт в удобное время",
+        "узнать статус ремонта без звонка",
+    ),
+    price_note="Точная стоимость — после диагностики.",
+    updates_text="Статус ремонта будет приходить сюда автоматически.",
+    object_name="устройство",
+    object_emoji="💻",
+    object_prompt="Какое устройство? (модель, например «iPhone 13» или «ноутбук Lenovo»)",
+    object_missing="устройство не указано",
+    problem_label="Проблема",
+    problem_prompt="Опишите проблему в двух словах:",
+    visit_label="Визит",
+    visit_wait="Ждём вас",
+    reminder_wait="ждём вас",
+)

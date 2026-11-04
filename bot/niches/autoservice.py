@@ -1,0 +1,46 @@
+"""Автосервис."""
+from bot.niches.base import Niche, ServicePreset, Status
+
+PRESET = Niche(
+    key="autoservice",
+    name="Автосервис",
+    emoji="🚗",
+    demo_name="«Автомастер»",
+    services=(
+        ServicePreset("Диагностика", "От 1 000 ₽, 30–60 минут", 1000),
+        ServicePreset("Техническое обслуживание", "От 5 000 ₽, 2–4 часа", 5000),
+        ServicePreset("Замена масла", "От 1 500 ₽, 30–40 минут", 1500),
+        ServicePreset("Ремонт тормозов", "От 2 500 ₽, 1–3 часа", 2500),
+        ServicePreset("Ремонт подвески", "От 3 000 ₽, от 2 часов", 3000),
+        ServicePreset("Шиномонтаж", "От 2 000 ₽ за комплект, 40–60 минут", 2000),
+    ),
+    statuses=(
+        Status("new", "📅 Вы записаны", holds_slot=True),
+        Status("diagnostics", "🔍 Автомобиль на диагностике"),
+        Status("approval", "💰 Согласование стоимости", approval=True),
+        Status("waiting_parts", "📦 Ждём запчасти"),
+        Status("in_progress", "🛠 Автомобиль в работе"),
+        Status("ready", "✅ Готово, можно забирать"),
+        Status("done", "🏁 Выдано"),
+    ),
+    slot_minutes=60,
+    menu_book="🚗 Записаться на диагностику",
+    menu_status="🔎 Статус моего автомобиля",
+    book_prompt="Что нужно сделать?",
+    welcome_points=(
+        "записаться в автосервис в удобное время",
+        "согласовать стоимость работ прямо в чате",
+        "узнать, готов ли автомобиль, без звонка",
+    ),
+    price_note="Точная стоимость — после диагностики и согласования с вами.",
+    updates_text="Статус автомобиля будет приходить сюда автоматически.",
+    object_name="автомобиль",
+    object_emoji="🚘",
+    object_prompt="Марка, модель, госномер (например, «Kia Rio, А123ВС 178»):",
+    object_missing="автомобиль не указан",
+    problem_label="Что беспокоит",
+    problem_prompt="Что беспокоит? Например: «стук спереди справа на неровностях»:",
+    visit_label="Визит",
+    visit_wait="Ждём вас",
+    reminder_wait="ждём вас",
+)

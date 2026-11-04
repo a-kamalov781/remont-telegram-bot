@@ -1,33 +1,14 @@
-"""SQLite через aiosqlite. Одна таблица заявок + услуги + блокировки слотов."""
+"""SQLite через aiosqlite: заявки, услуги по нишам, блокировки слотов, аналитика демо."""
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import aiosqlite
 
-# Статусы заявки — ровно то, что видит клиент
-STATUSES: dict[str, str] = {
-    "new": "🆕 Заявка принята",
-    "confirmed": "📅 Визит подтверждён",
-    "received": "🔧 Устройство принято в ремонт",
-    "diagnosed": "🔍 Диагностика завершена",
-    "waiting_parts": "📦 Ожидаем запчасти",
-    "in_progress": "⚙️ В работе",
-    "ready": "✅ Готово — можно забирать",
-    "done": "🏁 Выдано",
-    "cancelled": "❌ Отменено",
-}
-
-DEFAULT_SERVICES: list[tuple[str, str, int]] = [
-    ("Диагностика", "Бесплатно при ремонте у нас", 0),
-    ("Замена экрана телефона", "От 2 500 ₽, 1–2 часа", 2500),
-    ("Замена аккумулятора", "От 1 500 ₽, 30–60 минут", 1500),
-    ("Ремонт после воды", "От 2 000 ₽, 1–3 дня", 2000),
-    ("Чистка ноутбука + термопаста", "От 1 800 ₽, 1–2 часа", 1800),
-    ("Замена разъёма зарядки", "От 1 200 ₽, 1 час", 1200),
-]
+from bot.niches import ACTIVE_STATUSES, DEFAULT_NICHE, NICHES, Niche, get_niche
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS services (
@@ -58,9 +39,37 @@ CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
 CREATE TABLE IF NOT EXISTS blocked_slots (
     slot TEXT PRIMARY KEY
 );
+CREATE TABLE IF NOT EXISTS demo_users (
+    user_id INTEGER PRIMARY KEY,
+    niche TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS demo_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    niche TEXT NOT NULL,
+    event TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
-ACTIVE_STATUSES = ("new", "confirmed")  # занимают слот
+# Колонки, появившиеся после первой версии. Строки старой базы получают значения по умолчанию,
+# поэтому существующие заявки и услуги становятся заявками и услугами ниши repair.
+MIGRATIONS: dict[str, dict[str, str]] = {
+    "services": {"niche": f"TEXT NOT NULL DEFAULT '{DEFAULT_NICHE}'"},
+    "orders": {
+        "niche": f"TEXT NOT NULL DEFAULT '{DEFAULT_NICHE}'",
+        "demo": "INTEGER NOT NULL DEFAULT 0",
+        "address": "TEXT NOT NULL DEFAULT ''",
+        "quote_answer": "TEXT NOT NULL DEFAULT ''",
+    },
+}
+
+_ACTIVE_MARKS = ",".join("?" * len(ACTIVE_STATUSES))
+
+DEMO_EVENT_NICHE = "niche"
+DEMO_EVENT_BOOKED = "booked"
+DEMO_EVENT_FINISHED = "finished"
 
 
 @dataclass
@@ -79,6 +88,10 @@ class Order:
     admin_note: str
     created_at: datetime
     reminded: bool
+    niche: str = DEFAULT_NICHE
+    demo: bool = False
+    address: str = ""
+    quote_answer: str = ""
 
     @classmethod
     def from_row(cls, r: aiosqlite.Row) -> "Order":
@@ -88,17 +101,37 @@ class Order:
             device=r["device"], problem=r["problem"],
             slot=datetime.fromisoformat(r["slot"]), status=r["status"],
             admin_note=r["admin_note"], created_at=datetime.fromisoformat(r["created_at"]),
-            reminded=bool(r["reminded"]),
+            reminded=bool(r["reminded"]), niche=r["niche"], demo=bool(r["demo"]),
+            address=r["address"], quote_answer=r["quote_answer"],
         )
 
     @property
+    def preset(self) -> Niche:
+        return get_niche(self.niche)
+
+    @property
     def status_text(self) -> str:
-        return STATUSES.get(self.status, self.status)
+        return self.preset.status_text(self.status)
+
+    @property
+    def awaits_quote_answer(self) -> bool:
+        """Мастер указал сумму, клиент ещё не ответил."""
+        status = self.preset.status(self.status)
+        return bool(status and status.approval and self.admin_note and not self.quote_answer)
+
+
+def _scope(user_id: int | None) -> tuple[str, tuple]:
+    """Демо-заявки посетителя видны только ему и не пересекаются с настоящими записями."""
+    if user_id is None:
+        return "demo=0", ()
+    return "demo=1 AND user_id=?", (user_id,)
 
 
 class Database:
-    def __init__(self, path: str):
+    def __init__(self, path: str, niche: str = DEFAULT_NICHE, seed_all: bool = False):
         self.path = path
+        self.niche = niche
+        self.seed_all = seed_all
 
     async def init(self) -> None:
         d = os.path.dirname(self.path)
@@ -106,20 +139,38 @@ class Database:
             os.makedirs(d, exist_ok=True)
         async with aiosqlite.connect(self.path) as db:
             await db.executescript(SCHEMA)
-            cur = await db.execute("SELECT COUNT(*) FROM services")
-            (n,) = await cur.fetchone()
-            if n == 0:
-                await db.executemany(
-                    "INSERT INTO services(name, description, price_from) VALUES (?,?,?)",
-                    DEFAULT_SERVICES,
-                )
+            await self._migrate(db)
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_services_niche ON services(niche)")
+            for key in (NICHES if self.seed_all else (self.niche,)):
+                await self._seed_services(db, key)
             await db.commit()
 
+    @staticmethod
+    async def _migrate(db: aiosqlite.Connection) -> None:
+        for table, columns in MIGRATIONS.items():
+            cur = await db.execute(f"PRAGMA table_info({table})")
+            have = {row[1] for row in await cur.fetchall()}
+            for column, definition in columns.items():
+                if column not in have:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    @staticmethod
+    async def _seed_services(db: aiosqlite.Connection, key: str) -> None:
+        """Услуги пресета попадают в базу один раз: дальше ими управляет владелец."""
+        cur = await db.execute("SELECT COUNT(*) FROM services WHERE niche=?", (key,))
+        (n,) = await cur.fetchone()
+        if n == 0:
+            await db.executemany(
+                "INSERT INTO services(name, description, price_from, niche) VALUES (?,?,?,?)",
+                [(s.name, s.description, s.price_from, key) for s in NICHES[key].services],
+            )
+
     # ---------- services ----------
-    async def services(self) -> list[aiosqlite.Row]:
+    async def services(self, niche: str | None = None) -> list[aiosqlite.Row]:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            cur = await db.execute("SELECT * FROM services WHERE active=1 ORDER BY id")
+            cur = await db.execute("SELECT * FROM services WHERE active=1 AND niche=? ORDER BY id",
+                                   (niche or self.niche,))
             return list(await cur.fetchall())
 
     async def service(self, sid: int) -> aiosqlite.Row | None:
@@ -129,10 +180,11 @@ class Database:
             return await cur.fetchone()
 
     # ---------- slots ----------
-    async def taken_slots(self, day_iso: str) -> set[datetime]:
-        q = "SELECT slot FROM orders WHERE substr(slot,1,10)=? AND status IN (?,?)"
+    async def taken_slots(self, day_iso: str, user_id: int | None = None) -> set[datetime]:
+        where, params = _scope(user_id)
+        q = f"SELECT slot FROM orders WHERE substr(slot,1,10)=? AND status IN ({_ACTIVE_MARKS}) AND {where}"
         async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute(q, (day_iso, *ACTIVE_STATUSES))
+            cur = await db.execute(q, (day_iso, *ACTIVE_STATUSES, *params))
             return {datetime.fromisoformat(r[0]) for r in await cur.fetchall()}
 
     async def blocked_slots(self, day_iso: str) -> set[datetime]:
@@ -151,32 +203,36 @@ class Database:
             await db.commit()
 
     # ---------- orders ----------
-    async def has_active_order_at(self, phone: str, slot: datetime) -> bool:
+    async def has_active_order_at(self, phone: str, slot: datetime, user_id: int | None = None) -> bool:
+        where, params = _scope(user_id)
         async with aiosqlite.connect(self.path) as db:
             cur = await db.execute(
-                "SELECT 1 FROM orders WHERE phone=? AND slot=? AND status IN (?,?)",
-                (phone, slot.isoformat(), *ACTIVE_STATUSES),
+                f"SELECT 1 FROM orders WHERE phone=? AND slot=? AND status IN ({_ACTIVE_MARKS}) AND {where}",
+                (phone, slot.isoformat(), *ACTIVE_STATUSES, *params),
             )
             return await cur.fetchone() is not None
 
-    async def slot_is_free(self, slot: datetime) -> bool:
+    async def slot_is_free(self, slot: datetime, user_id: int | None = None) -> bool:
+        where, params = _scope(user_id)
         async with aiosqlite.connect(self.path) as db:
             cur = await db.execute(
-                "SELECT 1 FROM orders WHERE slot=? AND status IN (?,?) "
+                f"SELECT 1 FROM orders WHERE slot=? AND status IN ({_ACTIVE_MARKS}) AND {where} "
                 "UNION SELECT 1 FROM blocked_slots WHERE slot=?",
-                (slot.isoformat(), *ACTIVE_STATUSES, slot.isoformat()),
+                (slot.isoformat(), *ACTIVE_STATUSES, *params, slot.isoformat()),
             )
             return await cur.fetchone() is None
 
     async def create_order(self, *, user_id: int, username: str | None, name: str, phone: str,
                            service_id: int, service_name: str, device: str, problem: str,
-                           slot: datetime, now: datetime) -> int:
+                           slot: datetime, now: datetime, niche: str | None = None,
+                           demo: bool = False, address: str = "") -> int:
         async with aiosqlite.connect(self.path) as db:
             cur = await db.execute(
                 "INSERT INTO orders(user_id, username, name, phone, service_id, service_name, "
-                "device, problem, slot, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,'new',?)",
+                "device, problem, slot, status, created_at, niche, demo, address) "
+                "VALUES (?,?,?,?,?,?,?,?,?,'new',?,?,?,?)",
                 (user_id, username, name, phone, service_id, service_name, device, problem,
-                 slot.isoformat(), now.isoformat()),
+                 slot.isoformat(), now.isoformat(), niche or self.niche, int(demo), address),
             )
             await db.commit()
             return cur.lastrowid  # type: ignore[return-value]
@@ -196,10 +252,15 @@ class Database:
                 await db.execute("UPDATE orders SET status=?, admin_note=? WHERE id=?", (status, note, oid))
             await db.commit()
 
-    async def set_slot(self, oid: int, slot: datetime) -> None:
+    async def set_quote_answer(self, oid: int, answer: str) -> None:
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("UPDATE orders SET slot=?, status='confirmed', reminded=0 WHERE id=?",
-                             (slot.isoformat(), oid))
+            await db.execute("UPDATE orders SET quote_answer=? WHERE id=?", (answer, oid))
+            await db.commit()
+
+    async def set_slot(self, oid: int, slot: datetime, status: str = "confirmed") -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("UPDATE orders SET slot=?, status=?, reminded=0 WHERE id=?",
+                             (slot.isoformat(), status, oid))
             await db.commit()
 
     async def orders_for_day(self, day_iso: str) -> list[Order]:
@@ -211,11 +272,13 @@ class Database:
             )
             return [Order.from_row(r) for r in await cur.fetchall()]
 
-    async def user_orders(self, user_id: int, limit: int = 5) -> list[Order]:
+    async def user_orders(self, user_id: int, limit: int = 5, niche: str | None = None) -> list[Order]:
+        extra, params = (" AND niche=?", (niche,)) if niche else ("", ())
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
-                "SELECT * FROM orders WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)
+                f"SELECT * FROM orders WHERE user_id=?{extra} ORDER BY id DESC LIMIT ?",
+                (user_id, *params, limit),
             )
             return [Order.from_row(r) for r in await cur.fetchall()]
 
@@ -229,13 +292,14 @@ class Database:
             return [Order.from_row(r) for r in await cur.fetchall()]
 
     async def due_reminders(self, now: datetime, before_minutes: int) -> list[Order]:
-        """Подтверждённые/новые заявки, визит в окне [now, now+before], ещё не напоминали."""
-        from datetime import timedelta
+        """Подтверждённые/новые заявки, визит в окне [now, now+before], ещё не напоминали.
+        Посетителям демо напоминания не приходят: они не ждут визита."""
         hi = (now + timedelta(minutes=before_minutes)).isoformat()
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
-                "SELECT * FROM orders WHERE reminded=0 AND status IN (?,?) AND slot>? AND slot<=?",
+                f"SELECT * FROM orders WHERE reminded=0 AND demo=0 AND status IN ({_ACTIVE_MARKS}) "
+                "AND slot>? AND slot<=?",
                 (*ACTIVE_STATUSES, now.isoformat(), hi),
             )
             return [Order.from_row(r) for r in await cur.fetchall()]
@@ -245,7 +309,72 @@ class Database:
             await db.execute("UPDATE orders SET reminded=1 WHERE id=?", (oid,))
             await db.commit()
 
-    async def stats(self) -> dict[str, int]:
+    async def stats(self, demo: bool | None = None) -> dict[str, int]:
+        where, params = ("", ()) if demo is None else (" WHERE demo=?", (int(demo),))
         async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute("SELECT status, COUNT(*) FROM orders GROUP BY status")
+            cur = await db.execute(f"SELECT status, COUNT(*) FROM orders{where} GROUP BY status", params)
             return {s: n for s, n in await cur.fetchall()}
+
+    # ---------- демо ----------
+    async def demo_touch(self, user_id: int, now: datetime) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("INSERT OR IGNORE INTO demo_users(user_id, created_at) VALUES (?,?)",
+                             (user_id, now.isoformat()))
+            await db.commit()
+
+    async def demo_niche(self, user_id: int) -> str | None:
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute("SELECT niche FROM demo_users WHERE user_id=?", (user_id,))
+            row = await cur.fetchone()
+            return row[0] if row else None
+
+    async def set_demo_niche(self, user_id: int, niche: str, now: datetime) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "INSERT INTO demo_users(user_id, niche, created_at) VALUES (?,?,?) "
+                "ON CONFLICT(user_id) DO UPDATE SET niche=excluded.niche",
+                (user_id, niche, now.isoformat()),
+            )
+            await db.commit()
+        await self.demo_event(user_id, niche, DEMO_EVENT_NICHE, now)
+
+    async def demo_event(self, user_id: int, niche: str, event: str, now: datetime) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("INSERT INTO demo_events(user_id, niche, event, created_at) VALUES (?,?,?,?)",
+                             (user_id, niche, event, now.isoformat()))
+            await db.commit()
+
+    async def purge_demo_orders(self, cutoff: datetime) -> int:
+        """Удаляет только демо-заявки старше cutoff. Аналитика в demo_events остаётся."""
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute("DELETE FROM orders WHERE demo=1 AND created_at<?", (cutoff.isoformat(),))
+            await db.commit()
+            return cur.rowcount
+
+    async def demo_stats(self, exclude: Iterable[int] = ()) -> dict:
+        """Люди, а не события: один посетитель считается один раз на шаг и нишу."""
+        skip = tuple(exclude)
+        marks = ",".join("?" * len(skip))
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(f"SELECT COUNT(*) FROM demo_users WHERE user_id NOT IN ({marks})", skip)
+            (visitors,) = await cur.fetchone()
+            cur = await db.execute(
+                f"SELECT event, COUNT(DISTINCT user_id) FROM demo_events WHERE user_id NOT IN ({marks}) GROUP BY event",
+                skip,
+            )
+            totals = {event: n for event, n in await cur.fetchall()}
+            cur = await db.execute(
+                "SELECT niche, event, COUNT(DISTINCT user_id) FROM demo_events "
+                f"WHERE user_id NOT IN ({marks}) GROUP BY niche, event",
+                skip,
+            )
+            by_niche: dict[str, dict[str, int]] = {}
+            for niche, event, n in await cur.fetchall():
+                by_niche.setdefault(niche, {})[event] = n
+        return {
+            "visitors": visitors,
+            "chose": totals.get(DEMO_EVENT_NICHE, 0),
+            "booked": totals.get(DEMO_EVENT_BOOKED, 0),
+            "finished": totals.get(DEMO_EVENT_FINISHED, 0),
+            "by_niche": by_niche,
+        }

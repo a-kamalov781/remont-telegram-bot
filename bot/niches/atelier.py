@@ -1,0 +1,42 @@
+"""Ателье."""
+from bot.niches.base import Niche, ServicePreset, Status
+
+PRESET = Niche(
+    key="atelier",
+    name="Ателье",
+    emoji="🧵",
+    demo_name="«Золотая Игла»",
+    services=(
+        ServicePreset("Подгонка по фигуре", "От 1 500 ₽, 2–5 дней", 1500),
+        ServicePreset("Укоротить брюки", "От 500 ₽, 1–2 дня", 500),
+        ServicePreset("Замена молнии", "От 600 ₽, 1–2 дня", 600),
+        ServicePreset("Ремонт подкладки", "От 900 ₽, 2–3 дня", 900),
+        ServicePreset("Пошив на заказ", "От 8 000 ₽, от 7 дней", 8000),
+    ),
+    statuses=(
+        Status("new", "📥 Заявка принята", holds_slot=True),
+        Status("fitting", "📏 Примерка назначена", holds_slot=True),
+        Status("in_progress", "🧵 Изделие в работе"),
+        Status("ready", "✅ Готово, можно забирать"),
+        Status("done", "🏁 Выдано"),
+    ),
+    slot_minutes=30,
+    menu_book="📏 Записаться на примерку",
+    menu_status="🔎 Статус моего заказа",
+    book_prompt="Что нужно сделать?",
+    welcome_points=(
+        "записаться на примерку в удобное время",
+        "узнать, готов ли заказ, без звонка",
+    ),
+    price_note="Точная стоимость — после примерки.",
+    updates_text="Статус заказа будет приходить сюда автоматически.",
+    object_name="изделие",
+    object_emoji="👗",
+    object_prompt="Какое изделие? (например, «джинсы» или «свадебное платье»)",
+    object_missing="изделие не указано",
+    problem_label="Пожелания",
+    problem_prompt="Что изменить? Например: «укоротить на 4 см, убрать в талии»:",
+    visit_label="Примерка",
+    visit_wait="Ждём вас на примерку",
+    reminder_wait="ждём вас на примерку",
+)

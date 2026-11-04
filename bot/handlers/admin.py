@@ -10,7 +10,8 @@ from aiogram.types import CallbackQuery, Message
 from bot import keyboards as kb
 from bot import texts
 from bot.config import Settings
-from bot.db import STATUSES, Database
+from bot.db import DEMO_EVENT_FINISHED, Database
+from bot.niches import get_niche, status_label
 from bot.services.notify import Notifier
 
 router = Router(name="admin")
@@ -74,7 +75,8 @@ async def order_card(m: Message, command: CommandObject, db: Database):
     if not o:
         await m.answer("Заявка не найдена.")
         return
-    await m.answer(texts.admin_new_order(o) + f"\n\nСтатус: {o.status_text}", reply_markup=kb.admin_status_kb(o.id))
+    await m.answer(texts.admin_order(o) + f"\n\nСтатус: {o.status_text}",
+                   reply_markup=kb.admin_status_kb(o.preset, o.id, current=o.status if o.demo else None))
 
 
 @router.message(Command("note"))
@@ -89,9 +91,12 @@ async def note(m: Message, command: CommandObject, db: Database, notifier: Notif
         await m.answer("Заявка не найдена.")
         return
     await db.set_status(oid, o.status, note=text)
+    # Новая сумма — новый вопрос клиенту, прежний ответ больше не действует
+    await db.set_quote_answer(oid, "")
     o = await db.order(oid)
     await notifier.status_changed(o)
-    await m.answer(f"Комментарий к №{oid} отправлен клиенту.")
+    if not o.demo:
+        await m.answer(f"Комментарий к №{oid} отправлен клиенту.")
 
 
 @router.message(Command("move"))
@@ -102,13 +107,14 @@ async def move(m: Message, command: CommandObject, db: Database, notifier: Notif
         await m.answer("Формат: /move 12 2026-11-05 14:00")
         return
     oid = int(parts[0])
-    if not await db.order(oid):
+    o = await db.order(oid)
+    if not o:
         await m.answer("Заявка не найдена.")
         return
-    if not await db.slot_is_free(dt):
+    if not await db.slot_is_free(dt, o.user_id if o.demo else None):
         await m.answer("Этот слот занят или закрыт.")
         return
-    await db.set_slot(oid, dt)
+    await db.set_slot(oid, dt, status=o.preset.visit_status)
     await notifier.slot_moved(await db.order(oid))
     await m.answer(f"№{oid} перенесена на {dt.strftime('%d.%m %H:%M')}, клиент уведомлён.")
 
@@ -134,32 +140,58 @@ async def unblock(m: Message, command: CommandObject, db: Database):
 
 
 @router.message(Command("stats"))
-async def stats(m: Message, db: Database):
+async def stats(m: Message, db: Database, settings: Settings):
+    niche = get_niche(settings.niche)
+    if settings.demo_mode:
+        report = texts.demo_stats(await db.demo_stats(settings.admin_ids))
+        real = await db.stats(demo=False)
+        if real:
+            lines = "\n".join(f"{status_label(k, niche)}: <b>{v}</b>" for k, v in real.items())
+            report += f"\n\n<b>Заявки не из демо</b>\n{lines}"
+        await m.answer(report)
+        return
     st = await db.stats()
     if not st:
         await m.answer("Заявок ещё нет.")
         return
-    await m.answer("\n".join(f"{STATUSES.get(k, k)}: <b>{v}</b>" for k, v in st.items()))
+    await m.answer("\n".join(f"{status_label(k, niche)}: <b>{v}</b>" for k, v in st.items()))
 
 
 @router.callback_query(F.data.startswith("adm:"))
-async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier):
+async def admin_action(c: CallbackQuery, db: Database, notifier: Notifier, settings: Settings):
     _, action, oid_s = c.data.split(":")
     oid = int(oid_s)
     o = await db.order(oid)
     if not o:
         await c.answer("Заявка не найдена", show_alert=True)
         return
+    niche = o.preset
     if action == "menu":
-        await c.message.edit_reply_markup(reply_markup=kb.admin_status_kb(oid))
+        await c.message.edit_reply_markup(reply_markup=kb.admin_status_kb(niche, oid))
         await c.answer()
         return
-    if action not in STATUSES:
+    status = niche.status(action)
+    if status is None:
         await c.answer("Неизвестный статус", show_alert=True)
         return
-    await db.set_status(oid, action)
+    if action == o.status:
+        await c.answer(f"Статус уже такой: {o.status_text}")
+        return
+    if status.approval:
+        # Новое согласование начинается с чистого листа: сумма придёт через /note
+        await db.set_status(oid, action, note="")
+        await db.set_quote_answer(oid, "")
+    else:
+        await db.set_status(oid, action)
     o = await db.order(oid)
+    if o.demo:
+        # Старая карточка гаснет, новая придёт внизу чата вместе с сообщением клиента
+        await c.message.edit_text(texts.admin_order_with_status(o), reply_markup=None)
+        if action == niche.final.code:
+            await db.demo_event(o.user_id, niche.key, DEMO_EVENT_FINISHED, settings.now())
     await notifier.status_changed(o)
-    await c.message.edit_text(texts.admin_new_order(o) + f"\n\nСтатус: <b>{o.status_text}</b>",
-                              reply_markup=kb.admin_status_kb(oid))
+    if not o.demo:
+        hint = f"\n\n{texts.quote_hint(o)}" if status.approval else ""
+        await c.message.edit_text(texts.admin_order_with_status(o) + hint,
+                                  reply_markup=kb.admin_status_kb(niche, oid))
     await c.answer(f"Клиенту отправлено: {o.status_text}")

@@ -1,0 +1,47 @@
+"""Ремонт бытовой техники с выездом мастера."""
+from bot.niches.base import Niche, ServicePreset, Status
+
+PRESET = Niche(
+    key="appliance",
+    name="Ремонт бытовой техники",
+    emoji="🛠",
+    demo_name="«Мастер на дом»",
+    services=(
+        ServicePreset("Выезд и диагностика", "От 500 ₽, бесплатно при ремонте", 500),
+        ServicePreset("Ремонт стиральной машины", "От 2 000 ₽, 1–2 часа", 2000),
+        ServicePreset("Ремонт холодильника", "От 2 500 ₽, 1–3 часа", 2500),
+        ServicePreset("Ремонт посудомоечной машины", "От 2 000 ₽, 1–2 часа", 2000),
+        ServicePreset("Ремонт плиты и духовки", "От 1 800 ₽, 1–2 часа", 1800),
+    ),
+    statuses=(
+        Status("new", "📥 Заявка принята", holds_slot=True),
+        Status("confirmed", "📅 Выезд подтверждён", holds_slot=True),
+        Status("on_the_way", "🚐 Мастер выехал"),
+        Status("diagnostics", "🔍 Диагностика на месте"),
+        Status("waiting_parts", "📦 Ждём запчасти"),
+        Status("in_progress", "🛠 Идёт ремонт"),
+        Status("ready", "✅ Ремонт завершён"),
+        Status("done", "🏁 Работа сдана"),
+    ),
+    slot_minutes=120,
+    menu_book="🛠 Вызвать мастера",
+    menu_status="🔎 Статус моей заявки",
+    book_prompt="Что нужно починить?",
+    welcome_points=(
+        "вызвать мастера на дом в удобное время",
+        "узнать, когда приедет мастер, без звонка",
+    ),
+    price_note="Точная стоимость — после диагностики на месте.",
+    updates_text="Статус заявки будет приходить сюда автоматически.",
+    object_name="техника",
+    object_emoji="🧺",
+    object_prompt="Какая техника? (тип и марка, например «стиральная машина Bosch»)",
+    object_missing="техника не указана",
+    problem_label="Что случилось",
+    problem_prompt="Что случилось? Например: «не сливает воду, на экране ошибка E18»:",
+    visit_label="Выезд",
+    visit_wait="Мастер приедет",
+    reminder_wait="приедет мастер",
+    ask_address=True,
+    address_prompt="Адрес для выезда мастера (улица, дом, квартира):",
+)

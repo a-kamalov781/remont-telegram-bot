@@ -1,0 +1,43 @@
+"""Химчистка."""
+from bot.niches.base import Niche, ServicePreset, Status
+
+PRESET = Niche(
+    key="drycleaning",
+    name="Химчистка",
+    emoji="🧺",
+    demo_name="«Белый Лист»",
+    services=(
+        ServicePreset("Чистка пальто", "От 1 500 ₽, 3–5 дней", 1500),
+        ServicePreset("Чистка пуховика", "От 1 300 ₽, 3–5 дней", 1300),
+        ServicePreset("Чистка костюма", "От 1 200 ₽, 2–3 дня", 1200),
+        ServicePreset("Чистка обуви", "От 1 000 ₽, 2–4 дня", 1000),
+        ServicePreset("Чистка сумки", "От 1 800 ₽, 3–7 дней", 1800),
+        ServicePreset("Удаление пятен", "От 400 ₽, 1–2 дня", 400),
+    ),
+    statuses=(
+        Status("new", "📥 Заявка принята", holds_slot=True),
+        Status("assessment", "🔍 Вещь на оценке"),
+        Status("cleaning", "🫧 Вещь в чистке"),
+        Status("ready", "✅ Готово, можно забирать"),
+        Status("done", "🏁 Выдано"),
+    ),
+    slot_minutes=30,
+    menu_book="🧺 Сдать вещь в чистку",
+    menu_status="🔎 Статус моего заказа",
+    book_prompt="Что будем чистить?",
+    welcome_points=(
+        "выбрать удобное время, чтобы сдать вещь",
+        "узнать, готов ли заказ, без звонка",
+    ),
+    price_note="Точная стоимость — после оценки вещи.",
+    updates_text="Статус заказа будет приходить сюда автоматически.",
+    object_name="вещь",
+    object_emoji="🧥",
+    object_prompt="Какая вещь? (например, «шерстяное пальто» или «белые кроссовки»)",
+    object_missing="вещь не указана",
+    problem_label="Что сделать",
+    problem_prompt="Есть ли пятна или особые пожелания? Если есть пятно — откуда оно и как давно:",
+    visit_label="Приём вещи",
+    visit_wait="Ждём вас с вещью",
+    reminder_wait="ждём вас с вещью",
+)
