@@ -92,6 +92,7 @@ def normalize_phone(raw: str) -> str | None:
 
 async def show_menu(m: Message, s: Settings, niche: Niche) -> None:
     await m.answer(texts.welcome(s, niche), reply_markup=kb.main_menu(niche))
+    await m.answer(texts.business_card(s, niche), reply_markup=kb.book_kb(niche))
 
 
 @router.message(CommandStart())
@@ -142,6 +143,14 @@ async def book_start(m: Message, state: FSMContext, db: Database, niche: Niche):
     await m.answer(niche.book_prompt, reply_markup=kb.services_kb(await db.services(niche.key)))
 
 
+@router.callback_query(F.data == "book")
+async def book_from_card(c: CallbackQuery, state: FSMContext, db: Database, niche: Niche):
+    await state.clear()
+    await state.set_state(Booking.service)
+    await c.message.answer(niche.book_prompt, reply_markup=kb.services_kb(await db.services(niche.key)))
+    await c.answer()
+
+
 @router.callback_query(Booking.service, F.data.startswith("svc:"))
 async def pick_service(c: CallbackQuery, state: FSMContext, db: Database, settings: Settings, niche: Niche):
     sid = int(c.data.split(":")[1])
@@ -152,7 +161,8 @@ async def pick_service(c: CallbackQuery, state: FSMContext, db: Database, settin
     await state.update_data(service_id=sid, service_name=svc["name"])
     await state.set_state(Booking.date)
     dates = working_dates(_cfg(settings, niche), settings.now().date())
-    await c.message.edit_text(f"{niche.emoji} {svc['name']}\n\nВыберите день:", reply_markup=kb.dates_kb(dates))
+    header = texts.booking_header(settings, niche, svc["name"])
+    await c.message.edit_text(f"{header}\n\nВыберите день:", reply_markup=kb.dates_kb(dates))
     await c.answer()
 
 
@@ -174,7 +184,9 @@ async def pick_date(c: CallbackQuery, state: FSMContext, db: Database, settings:
         return
     await state.update_data(date=d.isoformat())
     await state.set_state(Booking.slot)
-    await c.message.edit_text("Выберите время:", reply_markup=kb.slots_kb(slots))
+    service = (await state.get_data()).get("service_name", "")
+    header = texts.booking_header(settings, niche, service, d)
+    await c.message.edit_text(f"{header}\n\nВыберите время:", reply_markup=kb.slots_kb(slots))
     await c.answer()
 
 
@@ -182,7 +194,9 @@ async def pick_date(c: CallbackQuery, state: FSMContext, db: Database, settings:
 async def back_dates(c: CallbackQuery, state: FSMContext, settings: Settings, niche: Niche):
     await state.set_state(Booking.date)
     dates = working_dates(_cfg(settings, niche), settings.now().date())
-    await c.message.edit_text("Выберите день:", reply_markup=kb.dates_kb(dates))
+    service = (await state.get_data()).get("service_name", "")
+    header = texts.booking_header(settings, niche, service)
+    await c.message.edit_text(f"{header}\n\nВыберите день:", reply_markup=kb.dates_kb(dates))
     await c.answer()
 
 

@@ -6,6 +6,10 @@ PRESET = Niche(
     name="Ремонт телефонов и ноутбуков",
     emoji="🔧",
     demo_name="«Ремонт Плюс»",
+    demo_city="Санкт-Петербург",
+    demo_street="Большой пр. П.С., 18",
+    demo_phone="+7 (812) 000-00-01",
+    client_of="сервиса по ремонту телефонов",
     services=(
         ServicePreset("Диагностика", "Бесплатно при ремонте у нас", 0),
         ServicePreset("Замена экрана телефона", "От 2 500 ₽, 1–2 часа", 2500),
@@ -41,6 +45,5 @@ PRESET = Niche(
     problem_label="Проблема",
     problem_prompt="Опишите проблему в двух словах:",
     visit_label="Визит",
-    visit_wait="Ждём вас",
     reminder_wait="ждём вас",
 )

@@ -21,6 +21,13 @@ def main_menu(niche: Niche) -> ReplyKeyboardMarkup:
     )
 
 
+def book_kb(niche: Niche) -> InlineKeyboardMarkup:
+    """Кнопка записи прямо под карточкой бизнеса."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=niche.menu_book, callback_data="book")],
+    ])
+
+
 def services_kb(services) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for s in services:

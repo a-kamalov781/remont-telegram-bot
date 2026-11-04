@@ -6,6 +6,10 @@ PRESET = Niche(
     name="Химчистка",
     emoji="🧺",
     demo_name="«Белый Лист»",
+    demo_city="Санкт-Петербург",
+    demo_street="Лиговский пр., 50",
+    demo_phone="+7 (812) 000-00-02",
+    client_of="химчистки",
     services=(
         ServicePreset("Чистка пальто", "От 1 500 ₽, 3–5 дней", 1500),
         ServicePreset("Чистка пуховика", "От 1 300 ₽, 3–5 дней", 1300),
@@ -38,6 +42,5 @@ PRESET = Niche(
     problem_label="Что сделать",
     problem_prompt="Есть ли пятна или особые пожелания? Если есть пятно — откуда оно и как давно:",
     visit_label="Приём вещи",
-    visit_wait="Ждём вас с вещью",
     reminder_wait="ждём вас с вещью",
 )

@@ -16,14 +16,14 @@ async def test_drycleaning_booking_flow(tmp_path, monkeypatch):
 
     await h.say("/start", CLIENT)
     assert "«Белый Лист»" in h.texts_to(CLIENT)[-1]
-    assert h.last_to(CLIENT).markup.keyboard[0][0].text == "🧺 Сдать вещь в чистку"
+    assert h.bot.sent[-2].markup.keyboard[0][0].text == "🧺 Сдать вещь в чистку"
 
     await h.book(CLIENT, niche.menu_book, device="Пальто", problem="Пятно от кофе")
     sent = "\n".join(h.texts_to(CLIENT))
     assert niche.object_prompt in sent and niche.problem_prompt in sent
     assert "Какое устройство" not in sent
     assert "Вещь: Пальто" in sent and "Что сделать: Пятно от кофе" in sent
-    assert "Ждём вас с вещью" in sent
+    assert "Вы записаны в <b>«Белый Лист»</b>" in sent
 
     o = await h.db.order(1)
     assert (o.niche, o.demo, o.slot, o.status, o.service_name) == ("drycleaning", False, SLOT, "new", "Чистка пальто")
@@ -120,7 +120,7 @@ async def test_appliance_asks_for_address(tmp_path, monkeypatch):
                  address="Невский пр., 10, кв. 5")
     sent = "\n".join(h.texts_to(CLIENT))
     assert niche.address_prompt in sent and "Адрес: Невский пр., 10, кв. 5" in sent
-    assert "Мастер приедет" in sent
+    assert "мастер приедет по адресу" in sent
 
     o = await h.db.order(1)
     assert o.address == "Невский пр., 10, кв. 5"

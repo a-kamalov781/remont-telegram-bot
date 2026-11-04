@@ -29,6 +29,10 @@ class Niche:
     name: str
     emoji: str
     demo_name: str  # название бизнеса в демо и значение по умолчанию
+    demo_city: str  # адрес и телефон вымышленные, показываются только в демо
+    demo_street: str
+    demo_phone: str
+    client_of: str  # «клиент химчистки» — для объяснения роли в демо
     services: tuple[ServicePreset, ...]
     statuses: tuple[Status, ...]  # первый — код new, последний — код done
     slot_minutes: int
@@ -48,11 +52,14 @@ class Niche:
     problem_prompt: str
 
     visit_label: str  # «Визит» / «Примерка» / «Выезд»
-    visit_wait: str  # «Ждём вас» / «Мастер приедет» — перед датой
     reminder_wait: str  # «ждём вас» — в напоминании после времени
 
     ask_address: bool = False
     address_prompt: str = ""
+
+    @property
+    def demo_address(self) -> str:
+        return f"{self.demo_city}, {self.demo_street}"
 
     @property
     def has_price(self) -> bool:
@@ -116,9 +123,10 @@ class Niche:
             out.append("названия услуг повторяются")
         if self.slot_minutes <= 0:
             out.append("slot_minutes должен быть больше нуля")
-        for field in ("key", "name", "emoji", "demo_name", "menu_book", "menu_status", "book_prompt",
+        for field in ("key", "name", "emoji", "demo_name", "demo_city", "demo_street", "demo_phone", "client_of",
+                      "menu_book", "menu_status", "book_prompt",
                       "price_note", "updates_text", "object_name", "object_emoji", "object_prompt",
-                      "object_missing", "problem_label", "problem_prompt", "visit_label", "visit_wait",
+                      "object_missing", "problem_label", "problem_prompt", "visit_label",
                       "reminder_wait"):
             if not str(getattr(self, field)).strip():
                 out.append(f"пустое поле {field}")

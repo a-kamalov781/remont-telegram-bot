@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from datetime import date
 from html import escape
+from urllib.parse import quote
 
 from bot.config import Settings
 from bot.db import Order
 from bot.niches import NICHES, Niche
 from bot.services.price import format_rub
-from bot.services.slots import fmt_dt
+from bot.services.slots import fmt_date, fmt_dt
 
 
 def _e(value: str) -> str:
@@ -20,6 +22,51 @@ def biz_name(s: Settings, niche: Niche) -> str:
     return s.business_name or niche.demo_name
 
 
+def biz_address(s: Settings, niche: Niche) -> str:
+    """Вне демо только настоящий адрес из настроек: вымышленный клиенту показывать нельзя."""
+    return niche.demo_address if s.demo_mode else s.business_address
+
+
+def biz_phone(s: Settings, niche: Niche) -> str:
+    return niche.demo_phone if s.demo_mode else s.business_phone
+
+
+def map_url(address: str) -> str:
+    return "https://yandex.ru/maps/?text=" + quote(address, safe="")
+
+
+def map_link(address: str) -> str:
+    return f'<a href="{map_url(address)}">📍 Открыть на карте</a>'
+
+
+def _visit_place(o: Order, s: Settings) -> str:
+    """Куда идти клиенту или куда едет мастер."""
+    return o.address or biz_address(s, o.preset)
+
+
+def business_card(s: Settings, niche: Niche) -> str:
+    address, phone = biz_address(s, niche), biz_phone(s, niche)
+    lines = [f"<b>{_e(biz_name(s, niche))}</b>"]
+    if address:
+        lines.append(f"📍 {_e(address)}")
+    lines.append(f"🕒 {s.work_start.strftime('%H:%M')}–{s.work_end.strftime('%H:%M')}")
+    if phone:
+        lines.append(f"📞 {_e(phone)}")
+    if address:
+        lines.append(map_link(address))
+    return "\n".join(lines)
+
+
+def booking_header(s: Settings, niche: Niche, service: str, day: date | None = None) -> str:
+    """Заголовок шагов выбора даты и времени: клиент видит, куда записывается."""
+    lines = [f"Запись в <b>{_e(biz_name(s, niche))}</b>"]
+    if service:
+        lines.append(f"{niche.emoji} {service}")
+    if day:
+        lines.append(f"📅 {fmt_date(day)}")
+    return "\n".join(lines)
+
+
 def _button_name(button: str) -> str:
     """Подпись кнопки без эмодзи в начале."""
     return button.split(" ", 1)[1]
@@ -28,7 +75,7 @@ def _button_name(button: str) -> str:
 def welcome(s: Settings, niche: Niche) -> str:
     points = "\n".join(f"• {p}," for p in niche.welcome_points)
     return (
-        f"Здравствуйте! Это бот <b>{biz_name(s, niche)}</b>.\n\n"
+        f"Здравствуйте! Это бот <b>{_e(biz_name(s, niche))}</b>.\n\n"
         "Здесь можно:\n"
         f"{points}\n"
         "• посмотреть цены и адрес,\n"
@@ -38,15 +85,10 @@ def welcome(s: Settings, niche: Niche) -> str:
 
 
 def contacts(s: Settings, niche: Niche) -> str:
-    lines = [f"<b>{biz_name(s, niche)}</b>"]
-    if s.business_address:
-        lines.append(f"📍 {s.business_address}")
-    if s.business_phone:
-        lines.append(f"📞 {s.business_phone}")
-    lines.append(f"🕒 Режим работы: {s.work_start.strftime('%H:%M')}–{s.work_end.strftime('%H:%M')}")
+    card = business_card(s, niche)
     if s.demo_mode:
-        lines.append("\n<i>Это пример. В вашем боте здесь будут ваши адрес, телефон и часы работы.</i>")
-    return "\n".join(lines)
+        return f"{card}\n\n<i>Это пример. В вашем боте здесь будут ваши адрес, телефон и часы работы.</i>"
+    return card
 
 
 def prices(services, niche: Niche) -> str:
@@ -78,11 +120,18 @@ def order_summary(niche: Niche, name: str, phone: str, service_name: str, device
 
 def order_created(o: Order, s: Settings) -> str:
     niche = o.preset
-    place = o.address or s.business_address
+    name = _e(biz_name(s, niche))
+    place = _visit_place(o, s)
+    if o.address:
+        where = f"Вы записаны в <b>{name}</b>: мастер приедет по адресу {_e(o.address)}, <b>{fmt_dt(o.slot)}</b>."
+    elif place:
+        where = f"Вы записаны в <b>{name}</b>, {_e(place)}, <b>{fmt_dt(o.slot)}</b>."
+    else:
+        where = f"Вы записаны в <b>{name}</b>, <b>{fmt_dt(o.slot)}</b>."
+    link = f"\n{map_link(place)}" if place else ""
     return (
         f"✅ Заявка <b>№{o.id}</b> принята.\n"
-        f"{niche.visit_wait} <b>{fmt_dt(o.slot)}</b>.\n"
-        f"{('📍 ' + _e(place)) if place else ''}\n\n"
+        f"{where}{link}\n\n"
         f"{niche.updates_text} "
         f"Проверить вручную — кнопка «{_button_name(niche.menu_status)}».\n"
         "Есть вопрос — просто напишите сюда, мастер ответит в этом чате."
@@ -114,10 +163,13 @@ def status_changed(o: Order) -> str:
 
 def reminder(o: Order, s: Settings) -> str:
     niche = o.preset
-    place = ", ".join(part for part in (biz_name(s, niche), o.address or s.business_address) if part)
+    address = _visit_place(o, s)
+    place = ", ".join(part for part in (biz_name(s, niche), address) if part)
+    link = f"{map_link(address)}\n" if address else ""
     return (
         f"⏰ Напоминаем: сегодня в <b>{o.slot.strftime('%H:%M')}</b> {niche.reminder_wait}.\n"
         f"{_e(place)}\n"
+        f"{link}"
         "Если не получается — ответьте на это сообщение, перенесём."
     )
 
@@ -264,9 +316,10 @@ def demo_pick() -> str:
 def demo_intro(niche: Niche) -> str:
     return (
         f"{niche.emoji} <b>{niche.name}</b>\n\n"
-        "В демо вы одновременно клиент и мастер: запишитесь как клиент, и вам придёт карточка мастера. "
-        "Меняйте в ней статусы и смотрите, что получает клиент.\n\n"
+        f"Представьте, что вы клиент {niche.client_of} {niche.demo_name} ({niche.demo_street}). "
+        "Сейчас вы пройдёте путь клиента, а потом увидите, как заявку получает владелец.\n\n"
         "Напишите в чат любой вопрос — увидите, как он придёт мастеру и как мастер ответит.\n\n"
+        "<i>Название, адрес и телефон в демо вымышленные.</i>\n"
         "Сменить бизнес — /niche"
     )
 

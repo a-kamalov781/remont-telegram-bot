@@ -6,6 +6,10 @@ PRESET = Niche(
     name="Автосервис",
     emoji="🚗",
     demo_name="«Автомастер»",
+    demo_city="Санкт-Петербург",
+    demo_street="Софийская ул., 14",
+    demo_phone="+7 (812) 000-00-04",
+    client_of="автосервиса",
     services=(
         ServicePreset("Диагностика", "От 1 000 ₽, 30–60 минут", 1000),
         ServicePreset("Техническое обслуживание", "От 5 000 ₽, 2–4 часа", 5000),
@@ -41,6 +45,5 @@ PRESET = Niche(
     problem_label="Что беспокоит",
     problem_prompt="Что беспокоит? Например: «стук спереди справа на неровностях»:",
     visit_label="Визит",
-    visit_wait="Ждём вас",
     reminder_wait="ждём вас",
 )

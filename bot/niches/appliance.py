@@ -6,6 +6,10 @@ PRESET = Niche(
     name="Ремонт бытовой техники",
     emoji="🛠",
     demo_name="«Мастер на дом»",
+    demo_city="Москва",
+    demo_street="Профсоюзная ул., 56",
+    demo_phone="+7 (495) 000-00-05",
+    client_of="службы ремонта техники",
     services=(
         ServicePreset("Выезд и диагностика", "От 500 ₽, бесплатно при ремонте", 500),
         ServicePreset("Ремонт стиральной машины", "От 2 000 ₽, 1–2 часа", 2000),
@@ -40,7 +44,6 @@ PRESET = Niche(
     problem_label="Что случилось",
     problem_prompt="Что случилось? Например: «не сливает воду, на экране ошибка E18»:",
     visit_label="Выезд",
-    visit_wait="Мастер приедет",
     reminder_wait="приедет мастер",
     ask_address=True,
     address_prompt="Адрес для выезда мастера (улица, дом, квартира):",

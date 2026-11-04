@@ -32,7 +32,7 @@ async def test_start_offers_every_niche_and_saves_choice(tmp_path, monkeypatch):
 
     await h.press("niche:drycleaning", ANNA)
     assert await h.db.demo_niche(ANNA.id) == "drycleaning"
-    assert h.last_to(ANNA).markup.keyboard[0][0].text == "🧺 Сдать вещь в чистку"
+    assert h.bot.sent[-2].markup.keyboard[0][0].text == "🧺 Сдать вещь в чистку"
 
     # Выбор живёт отдельно у каждого посетителя
     assert await h.db.demo_niche(BORIS.id) is None

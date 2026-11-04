@@ -40,6 +40,11 @@ async def purge_demo(db: Database, settings: Settings) -> None:
         log.info("demo orders removed: %s", removed)
 
 
+def bot_defaults() -> DefaultBotProperties:
+    # Без превью: ссылка на карту не должна разворачиваться в большую картинку под каждым сообщением
+    return DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
+
+
 def bot_commands(settings: Settings) -> list[BotCommand]:
     if settings.demo_mode:
         return [
@@ -62,7 +67,7 @@ async def main() -> None:
     db = Database(settings.db_path, settings.niche, seed_all=settings.demo_mode)
     await db.init()
 
-    bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(settings.bot_token, default=bot_defaults())
     dp = Dispatcher(storage=MemoryStorage())
     sheets = SheetsExporter(settings.google_credentials_file, settings.google_sheet_id, niche)
     notifier = Notifier(bot, settings, sheets)

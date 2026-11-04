@@ -6,6 +6,10 @@ PRESET = Niche(
     name="Ателье",
     emoji="🧵",
     demo_name="«Золотая Игла»",
+    demo_city="Москва",
+    demo_street="Мясницкая ул., 24",
+    demo_phone="+7 (495) 000-00-03",
+    client_of="ателье",
     services=(
         ServicePreset("Подгонка по фигуре", "От 1 500 ₽, 2–5 дней", 1500),
         ServicePreset("Укоротить брюки", "От 500 ₽, 1–2 дня", 500),
@@ -37,6 +41,5 @@ PRESET = Niche(
     problem_label="Пожелания",
     problem_prompt="Что изменить? Например: «укоротить на 4 см, убрать в талии»:",
     visit_label="Примерка",
-    visit_wait="Ждём вас на примерку",
     reminder_wait="ждём вас на примерку",
 )
