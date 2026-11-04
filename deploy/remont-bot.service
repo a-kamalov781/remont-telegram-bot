@@ -1,0 +1,14 @@
+[Unit]
+Description=Remont Telegram bot
+After=network.target
+
+[Service]
+User=bot
+WorkingDirectory=/opt/remont-bot
+ExecStart=/opt/remont-bot/.venv/bin/python -m bot.main
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/remont-bot/.env
+
+[Install]
+WantedBy=multi-user.target
