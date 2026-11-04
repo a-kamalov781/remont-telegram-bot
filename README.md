@@ -39,7 +39,7 @@ python -m bot.main
 ## Настройка под клиента — только .env
 
 ```
-BUSINESS_NAME=Сервис «Ремонт Плюс»
+BUSINESS_NAME=«Ремонт Плюс»
 BUSINESS_ADDRESS=Санкт-Петербург, Невский пр., 1
 BUSINESS_PHONE=+7 (812) 000-00-00
 WORK_START=10:00

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # NoDecode: значения в .env — «1,2,3», а не JSON, разбирает _split_ints
     admin_ids: Annotated[list[int], NoDecode]
 
-    business_name: str = "Сервисный центр"
+    business_name: str = "«Ремонт Плюс»"
     business_address: str = ""
     business_phone: str = ""
 
