@@ -7,7 +7,7 @@ from bot.services.slots import fmt_dt
 
 def welcome(s: Settings) -> str:
     return (
-        f"Здравствуйте! Это бот сервиса <b>{s.business_name}</b>.\n\n"
+        f"Здравствуйте! Вас приветствует <b>{s.business_name}</b>.\n\n"
         "Здесь можно:\n"
         "• записаться на ремонт в удобное время,\n"
         "• узнать статус ремонта без звонка,\n"
@@ -72,7 +72,7 @@ def status_changed(o: Order) -> str:
 
 def reminder(o: Order, s: Settings) -> str:
     return (
-        f"⏰ Напоминаем: сегодня в <b>{o.slot.strftime('%H:%M')}</b> ждём вас в {s.business_name}.\n"
+        f"⏰ {s.business_name}: напоминаем, сегодня в <b>{o.slot.strftime('%H:%M')}</b> ждём вас.\n"
         f"{('📍 ' + s.business_address) if s.business_address else ''}\n"
         "Если не получается прийти — ответьте на это сообщение, перенесём."
     )

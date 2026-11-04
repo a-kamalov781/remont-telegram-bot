@@ -97,7 +97,7 @@ async def test_full_booking_flow(tmp_path, monkeypatch):
     monkeypatch.setattr(CallbackQuery, "answer", _noop)
 
     await dp.feed_update(bot, msg("/start"))
-    assert any("Это бот сервиса" in t for t in bot.sent)
+    assert any("Вас приветствует" in t for t in bot.sent)
 
     await dp.feed_update(bot, msg("📝 Записаться на ремонт"))
     await dp.feed_update(bot, cb("svc:2"))
